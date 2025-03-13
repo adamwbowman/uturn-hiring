@@ -1,0 +1,2 @@
+
+<p>simple page</p>
