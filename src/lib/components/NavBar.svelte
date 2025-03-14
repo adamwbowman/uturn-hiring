@@ -10,8 +10,9 @@
 <nav class="navbar navbar-expand-lg navbar-light bg-white">
     <div class="container-fluid d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center">
-            <a class="navbar-brand" href="/" data-sveltekit-preload-data="hover">Brand</a>
+            <a class="navbar-brand" href="/" data-sveltekit-preload-data="hover">Svelte5kit + Bootstrap</a>
             {@render navMainBtn('Page', '/page', 'bi bi-plus-circle-dotted')}
+            {@render navMainBtn('Mongo', '/mongo-test', 'bi bi-database')}
         </div>
         <div class="btn-group">
             <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
