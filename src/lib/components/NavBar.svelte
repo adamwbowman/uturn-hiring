@@ -1,16 +1,14 @@
-
 <script>
 	import { page } from '$app/state';
     
 	let activePage = $derived(page.url.pathname);
 </script>
 
-
-
 <nav class="navbar navbar-expand-lg navbar-light bg-white">
     <div class="container-fluid d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center">
             <a class="navbar-brand" href="/" data-sveltekit-preload-data="hover">Svelte5kit + Bootstrap</a>
+            {@render navMainBtn('Positions', '/positions', 'bi bi-briefcase')}
             {@render navMainBtn('Page', '/page', 'bi bi-plus-circle-dotted')}
             {@render navMainBtn('Mongo', '/mongo-test', 'bi bi-database')}
         </div>

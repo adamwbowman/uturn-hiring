@@ -1,4 +1,3 @@
-// src/routes/api/test-db/details/+server.js
 import { json } from '@sveltejs/kit';
 import { MongoClient } from 'mongodb';
 
