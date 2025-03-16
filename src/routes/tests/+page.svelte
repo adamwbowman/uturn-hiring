@@ -1,8 +1,8 @@
 <script>
-	import DatabaseTests from './components/DatabaseTests.svelte';
-	import PositionsTests from './components/PositionsTests.svelte';
-	import IntegrationTests from './components/IntegrationTests.svelte';
-	import E2ETests from './components/E2ETests.svelte';
+	import DatabaseTests from './unit/DatabaseTests.svelte';
+	import PositionsTests from './unit/PositionsTests.svelte';
+	import IntegrationTests from './integration/IntegrationTests.svelte';
+	import E2ETests from './e2e/E2ETests.svelte';
 	
 	const sections = [
 		{ id: 'database', title: 'Database Tests', component: DatabaseTests },
