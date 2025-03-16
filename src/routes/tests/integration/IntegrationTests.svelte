@@ -170,6 +170,182 @@
                     recoverySuccessful: validResponse.ok
                 };
             }
+        },
+        {
+            name: 'Complete Candidate Lifecycle',
+            run: async () => {
+                // 1. Create candidate
+                const candidate = {
+                    name: 'Integration Test Candidate',
+                    email: 'test@example.com',
+                    source: 'Recruiter',
+                    sourceContact: 'Test Recruiter',
+                    position: 'Test Engineer',
+                    requestedPay: 120000
+                };
+                const createResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(candidate)
+                });
+                if (!createResponse.ok) throw new Error('Failed to create candidate');
+                const { id } = await createResponse.json();
+                
+                // 2. Verify candidate exists and matches input
+                const getResponse = await fetch('/api/candidates');
+                const candidates = await getResponse.json();
+                const created = candidates.find(c => c._id === id);
+                if (!created) throw new Error('Created candidate not found');
+                if (created.name !== candidate.name) throw new Error('Candidate data mismatch');
+                
+                // 3. Delete candidate
+                const deleteResponse = await fetch(`/api/candidates/${id}`, {
+                    method: 'DELETE'
+                });
+                if (!deleteResponse.ok) throw new Error('Failed to delete candidate');
+                
+                // 4. Verify deletion
+                const finalResponse = await fetch('/api/candidates');
+                const finalCandidates = await finalResponse.json();
+                if (finalCandidates.find(c => c._id === id)) {
+                    throw new Error('Candidate not properly deleted');
+                }
+                
+                return { success: true };
+            }
+        },
+        {
+            name: 'Candidate Database State Consistency',
+            run: async () => {
+                // 1. Clear test data
+                const initialCandidates = await (await fetch('/api/candidates')).json();
+                for (const cand of initialCandidates) {
+                    await fetch(`/api/candidates/${cand._id}`, { method: 'DELETE' });
+                }
+                
+                // 2. Create multiple candidates
+                const candidates = [
+                    {
+                        name: 'Candidate 1',
+                        email: 'candidate1@example.com',
+                        source: 'Recruiter',
+                        sourceContact: 'Recruiter 1',
+                        position: 'Engineer',
+                        requestedPay: 100000
+                    },
+                    {
+                        name: 'Candidate 2',
+                        email: 'candidate2@example.com',
+                        source: 'Referral',
+                        sourceContact: 'Career Page',
+                        position: 'Designer',
+                        requestedPay: 90000
+                    }
+                ];
+                
+                for (const cand of candidates) {
+                    await fetch('/api/candidates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cand)
+                    });
+                }
+                
+                // 3. Verify database state
+                const finalCandidates = await (await fetch('/api/candidates')).json();
+                if (finalCandidates.length !== candidates.length) {
+                    throw new Error('Database state inconsistent');
+                }
+                
+                return { 
+                    expected: candidates.length,
+                    actual: finalCandidates.length
+                };
+            }
+        },
+        {
+            name: 'Candidate Concurrent Operations',
+            run: async () => {
+                // 1. Create multiple candidates concurrently
+                const candidates = Array(5).fill().map((_, i) => ({
+                    name: `Concurrent Candidate ${i}`,
+                    email: `concurrent${i}@example.com`,
+                    source: 'Recruiter',
+                    sourceContact: 'Test Recruiter',
+                    position: 'Engineer',
+                    requestedPay: 100000 + (i * 10000)
+                }));
+                
+                // Run creates concurrently
+                const results = await Promise.all(
+                    candidates.map(cand => 
+                        fetch('/api/candidates', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(cand)
+                        })
+                    )
+                );
+                
+                // Verify all operations succeeded
+                const allSucceeded = results.every(r => r.ok);
+                if (!allSucceeded) throw new Error('Concurrent operations failed');
+                
+                // Verify database consistency
+                const finalCandidates = await (await fetch('/api/candidates')).json();
+                const hasAllCandidates = candidates.every(cand => 
+                    finalCandidates.some(fc => fc.email === cand.email)
+                );
+                
+                if (!hasAllCandidates) throw new Error('Some concurrent operations not reflected in database');
+                
+                return { 
+                    operationsCompleted: results.length,
+                    allSucceeded
+                };
+            }
+        },
+        {
+            name: 'Candidate Error Recovery',
+            run: async () => {
+                // 1. Attempt invalid operation
+                const invalidCandidate = {
+                    name: 'A'.repeat(101), // Too long
+                    email: 'test@example.com',
+                    source: 'Recruiter',
+                    position: 'Engineer'
+                };
+                
+                const invalidResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(invalidCandidate)
+                });
+                
+                if (invalidResponse.ok) throw new Error('Should reject invalid candidate');
+                
+                // 2. Verify system still accepts valid operations
+                const validCandidate = {
+                    name: 'Valid Candidate',
+                    email: 'valid@example.com',
+                    source: 'Recruiter',
+                    position: 'Engineer',
+                    requestedPay: 100000
+                };
+                
+                const validResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(validCandidate)
+                });
+                
+                if (!validResponse.ok) throw new Error('System not recovering from errors');
+                
+                return { 
+                    errorHandled: !invalidResponse.ok,
+                    recoverySuccessful: validResponse.ok
+                };
+            }
         }
     ];
     

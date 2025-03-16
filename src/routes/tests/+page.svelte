@@ -3,10 +3,12 @@
 	import PositionsTests from './unit/PositionsTests.svelte';
 	import IntegrationTests from './integration/IntegrationTests.svelte';
 	import E2ETests from './e2e/E2ETests.svelte';
+	import CandidatesTests from './unit/CandidatesTests.svelte';
 	
 	const sections = [
 		{ id: 'database', title: 'Database Tests', component: DatabaseTests },
 		{ id: 'positions', title: 'Positions Tests', component: PositionsTests },
+		{ id: 'candidates', title: 'Candidates Tests', component: CandidatesTests },
 		{ id: 'integration', title: 'Integration Tests', component: IntegrationTests },
 		{ id: 'e2e', title: 'End-to-End Tests', component: E2ETests }
 	];
@@ -36,3 +38,24 @@
 		{/if}
 	{/each}
 </div>
+
+<!-- <div class="container my-4">
+	<h1>Test Suite</h1>
+	<div class="row g-4">
+		<div class="col-12">
+			<DatabaseTests />
+		</div>
+		<div class="col-12">
+			<PositionsTests />
+		</div>
+		<div class="col-12">
+			<CandidatesTests />
+		</div>
+		<div class="col-12">
+			<IntegrationTests />
+		</div>
+		<div class="col-12">
+			<E2ETests />
+		</div>
+	</div>
+</div> -->

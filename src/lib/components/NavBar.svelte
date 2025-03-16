@@ -9,6 +9,7 @@
         <div class="d-flex align-items-center">
             <a class="navbar-brand" href="/" data-sveltekit-preload-data="hover">Svelte5kit + Bootstrap</a>
             {@render navMainBtn('Positions', '/positions', 'bi bi-list-ul')}
+            {@render navMainBtn('Candidates', '/candidates', 'bi bi-person-plus')}
             {@render navMainBtn('Page', '/page', 'bi bi-plus-circle-dotted')}
             {@render navMainBtn('Tests', '/tests', 'bi bi-clipboard-check')}
         </div>

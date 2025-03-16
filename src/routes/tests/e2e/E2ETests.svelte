@@ -229,6 +229,248 @@
                     timelineCounts: timelineCounts
                 };
             }
+        },
+        {
+            name: 'Complete Candidate Management Workflow',
+            run: async () => {
+                // 1. Create a new candidate
+                const candidate = {
+                    name: 'John Smith',
+                    email: 'john.smith@example.com',
+                    source: 'Recruiter',
+                    sourceContact: 'Jane Recruiter',
+                    position: 'Senior Engineer',
+                    requestedPay: 150000
+                };
+                
+                const createResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(candidate)
+                });
+                if (!createResponse.ok) throw new Error('Failed to create candidate');
+                const { id } = await createResponse.json();
+                
+                // 2. Verify candidate is listed
+                const listResponse = await fetch('/api/candidates');
+                if (!listResponse.ok) throw new Error('Failed to list candidates');
+                const candidates = await listResponse.json();
+                const created = candidates.find(c => c._id === id);
+                if (!created) throw new Error('Candidate not found in listing');
+                
+                // 3. Verify all fields match
+                const fieldChecks = [
+                    ['name', candidate.name],
+                    ['email', candidate.email],
+                    ['source', candidate.source],
+                    ['sourceContact', candidate.sourceContact],
+                    ['position', candidate.position],
+                    ['requestedPay', candidate.requestedPay],
+                    ['status', 'New'] // Default status
+                ];
+                
+                for (const [field, expected] of fieldChecks) {
+                    if (created[field] !== expected) {
+                        throw new Error(`Field mismatch: ${field} expected ${expected}, got ${created[field]}`);
+                    }
+                }
+                
+                // 4. Clean up
+                const deleteResponse = await fetch(`/api/candidates/${id}`, {
+                    method: 'DELETE'
+                });
+                if (!deleteResponse.ok) throw new Error('Failed to clean up test candidate');
+                
+                return { success: true, fieldsVerified: fieldChecks.length };
+            }
+        },
+        {
+            name: 'Multiple Candidates Management',
+            run: async () => {
+                // 1. Create multiple candidates
+                const candidates = [
+                    {
+                        name: 'Frontend Dev',
+                        email: 'frontend@example.com',
+                        source: 'Recruiter',
+                        sourceContact: 'Career Page',
+                        position: 'Frontend Developer',
+                        requestedPay: 120000
+                    },
+                    {
+                        name: 'Sales Rep',
+                        email: 'sales@example.com',
+                        source: 'Referral',
+                        sourceContact: 'Mike Manager',
+                        position: 'Sales Representative',
+                        requestedPay: 80000
+                    },
+                    {
+                        name: 'Product Manager',
+                        email: 'pm@example.com',
+                        source: 'Other',
+                        sourceContact: 'Sarah Recruiter',
+                        position: 'Product Manager',
+                        requestedPay: 140000
+                    }
+                ];
+                
+                const createdIds = [];
+                
+                // Create candidates
+                for (const cand of candidates) {
+                    const response = await fetch('/api/candidates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cand)
+                    });
+                    if (!response.ok) throw new Error(`Failed to create candidate: ${cand.name}`);
+                    const { id } = await response.json();
+                    createdIds.push(id);
+                }
+                
+                // 2. Verify all candidates are listed
+                const listResponse = await fetch('/api/candidates');
+                if (!listResponse.ok) throw new Error('Failed to list candidates');
+                const listedCandidates = await listResponse.json();
+                
+                // Check each candidate exists and matches
+                for (let i = 0; i < candidates.length; i++) {
+                    const created = listedCandidates.find(c => c._id === createdIds[i]);
+                    if (!created) throw new Error(`Candidate not found: ${candidates[i].name}`);
+                    
+                    if (created.name !== candidates[i].name ||
+                        created.email !== candidates[i].email ||
+                        created.source !== candidates[i].source ||
+                        created.position !== candidates[i].position) {
+                        throw new Error(`Data mismatch for candidate: ${candidates[i].name}`);
+                    }
+                }
+                
+                // 3. Clean up
+                for (const id of createdIds) {
+                    const deleteResponse = await fetch(`/api/candidates/${id}`, {
+                        method: 'DELETE'
+                    });
+                    if (!deleteResponse.ok) throw new Error(`Failed to delete candidate: ${id}`);
+                }
+                
+                return { 
+                    candidatesCreated: candidates.length,
+                    candidatesVerified: candidates.length,
+                    candidatesDeleted: createdIds.length
+                };
+            }
+        },
+        {
+            name: 'Source Filter Workflow',
+            run: async () => {
+                // 1. Create candidates from different sources
+                const sources = ['Recruiter', 'Referral', 'Other'];
+                const createdIds = [];
+                
+                for (const source of sources) {
+                    const candidate = {
+                        name: `${source} Candidate`,
+                        email: `${source.toLowerCase()}@example.com`,
+                        source: source,
+                        sourceContact: `${source} Contact`,
+                        position: 'Test Role',
+                        requestedPay: 100000
+                    };
+                    
+                    const response = await fetch('/api/candidates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(candidate)
+                    });
+                    if (!response.ok) throw new Error(`Failed to create ${source} candidate`);
+                    const { id } = await response.json();
+                    createdIds.push(id);
+                }
+                
+                // 2. Verify all sources are represented
+                const listResponse = await fetch('/api/candidates');
+                if (!listResponse.ok) throw new Error('Failed to list candidates');
+                const candidates = await listResponse.json();
+                
+                const sourceCounts = {};
+                for (const cand of candidates) {
+                    sourceCounts[cand.source] = (sourceCounts[cand.source] || 0) + 1;
+                }
+                
+                for (const source of sources) {
+                    if (!sourceCounts[source]) {
+                        throw new Error(`Source ${source} not found in candidates`);
+                    }
+                }
+                
+                // 3. Clean up
+                for (const id of createdIds) {
+                    await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
+                }
+                
+                return { 
+                    sourcesTested: sources.length,
+                    sourceCounts: sourceCounts
+                };
+            }
+        },
+        {
+            name: 'Pay Range Workflow',
+            run: async () => {
+                // 1. Create candidates with different pay ranges
+                const payRanges = [50000, 100000, 150000, 200000];
+                const createdIds = [];
+                
+                for (const pay of payRanges) {
+                    const candidate = {
+                        name: `${pay} Candidate`,
+                        email: `pay${pay}@example.com`,
+                        source: 'Recruiter',
+                        sourceContact: 'Test Recruiter',
+                        position: 'Test Role',
+                        requestedPay: pay
+                    };
+                    
+                    const response = await fetch('/api/candidates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(candidate)
+                    });
+                    if (!response.ok) throw new Error(`Failed to create candidate with pay ${pay}`);
+                    const { id } = await response.json();
+                    createdIds.push(id);
+                }
+                
+                // 2. Verify pay range distribution
+                const listResponse = await fetch('/api/candidates');
+                if (!listResponse.ok) throw new Error('Failed to list candidates');
+                const candidates = await listResponse.json();
+                
+                const payCounts = {
+                    hourly: 0,
+                    salary: 0
+                };
+                
+                for (const cand of candidates) {
+                    if (cand.requestedPay < 1000) {
+                        payCounts.hourly++;
+                    } else {
+                        payCounts.salary++;
+                    }
+                }
+                
+                // 3. Clean up
+                for (const id of createdIds) {
+                    await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
+                }
+                
+                return { 
+                    payRangesTested: payRanges.length,
+                    payCounts: payCounts
+                };
+            }
         }
     ];
     
