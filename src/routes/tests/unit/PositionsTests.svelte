@@ -330,6 +330,7 @@
                 const stages = ['CV Review', 'Cultural Fit', 'Interview'];
                 
                 // Progress first candidate to hired
+                let currentStage = 'New';  // Initialize the current stage
                 for (const stage of [...stages, 'Hired']) {
                     console.log(`Updating candidate 1 to stage: ${stage}`);
                     try {
@@ -340,6 +341,8 @@
                         try {
                             updateResponse = await makePatchRequest(`/api/candidates/${candidate1Id}`, {
                                 status: stage,
+                                currentStage: currentStage,
+                                stageStatus: 'Passed',
                                 reviewer: 'Test Reviewer',
                                 notes: 'Test notes',
                                 action: 'pass'
@@ -350,6 +353,9 @@
                             throw new Error(`PATCH request failed: ${error.status} ${error.statusText} - ${error.responseText}`);
                         }
                         
+                        // Update currentStage for the next iteration
+                        currentStage = stage;
+                        
                         // Verify stage was recorded correctly
                         console.log(`Verifying stage record for ${stage}`);
                         const checkStageResponse = await fetch(`/api/candidates/${candidate1Id}`);
@@ -359,42 +365,62 @@
                         }
                         const candidateWithStage = await checkStageResponse.json();
                         console.log(`Stage data for ${stage}:`, candidateWithStage.stages[stage]);
-                        if (!candidateWithStage.stages[stage] || !candidateWithStage.stages[stage].completed) {
-                            throw new Error(`Stage ${stage} was not properly recorded`);
+                        if (!candidateWithStage.stages[stage]) {
+                            throw new Error(`Stage ${stage} was not found in candidate data`);
+                        }
+                        
+                        // The current and next stages have different completion states
+                        if (stage === 'CV Review') {
+                            // We're checking "CV Review" stage - this is the NEW stage we're transitioning TO
+                            // It should be "In Progress" not "Passed" at this point
+                            if (candidateWithStage.stages[stage].status !== 'In Progress') {
+                                throw new Error(`Stage ${stage} should be In Progress but was ${candidateWithStage.stages[stage].status}`);
+                            }
+                            
+                            // Also verify the previous stage (New) is marked as Passed
+                            if (candidateWithStage.stages['New'].status !== 'Passed') {
+                                throw new Error(`Previous stage New should be marked as Passed but was ${candidateWithStage.stages['New'].status}`);
+                            }
+                        } else if (stage === 'Cultural Fit') {
+                            // We're checking "Cultural Fit" stage - this is the NEW stage we're transitioning TO
+                            if (candidateWithStage.stages[stage].status !== 'In Progress') {
+                                throw new Error(`Stage ${stage} should be In Progress but was ${candidateWithStage.stages[stage].status}`);
+                            }
+                            
+                            // Also verify the previous stage (CV Review) is marked as Passed
+                            if (candidateWithStage.stages['CV Review'].status !== 'Passed') {
+                                throw new Error(`Previous stage CV Review should be marked as Passed but was ${candidateWithStage.stages['CV Review'].status}`);
+                            }
+                        } else if (stage === 'Interview') {
+                            // We're checking "Interview" stage - this is the NEW stage we're transitioning TO
+                            if (candidateWithStage.stages[stage].status !== 'In Progress') {
+                                throw new Error(`Stage ${stage} should be In Progress but was ${candidateWithStage.stages[stage].status}`);
+                            }
+                            
+                            // Also verify the previous stage (Cultural Fit) is marked as Passed
+                            if (candidateWithStage.stages['Cultural Fit'].status !== 'Passed') {
+                                throw new Error(`Previous stage Cultural Fit should be marked as Passed but was ${candidateWithStage.stages['Cultural Fit'].status}`);
+                            }
+                        } else if (stage === 'Hired') {
+                            // Special case for Hired stage
+                            if (candidateWithStage.stages[stage].status !== 'Hired') {
+                                throw new Error(`Stage ${stage} should be Hired but was ${candidateWithStage.stages[stage].status}`);
+                            }
+                            
+                            // Also verify the previous stage (Interview) is marked as Passed
+                            if (candidateWithStage.stages['Interview'].status !== 'Passed') {
+                                throw new Error(`Previous stage Interview should be marked as Passed but was ${candidateWithStage.stages['Interview'].status}`);
+                            }
                         }
 
                         // If this is the final (Hired) stage, update position status
                         if (stage === 'Hired') {
                             console.log('Waiting for candidate status update to complete...');
-                            // Wait for 1 second to ensure candidate status is updated
+                            // Wait for 1 second to ensure candidate status is updated and position is automatically closed
                             await new Promise(resolve => setTimeout(resolve, 1000));
                             
-                            // First verify the position exists and get its current status
-                            console.log('Verifying position exists...');
-                            const checkPositionResponse = await fetch(`/api/positions/${positionId}`);
-                            if (!checkPositionResponse.ok) {
-                                const errorData = await checkPositionResponse.json();
-                                throw new Error(`Failed to get position before update: ${JSON.stringify(errorData)}`);
-                            }
-                            const positionBeforeUpdate = await checkPositionResponse.json();
-                            console.log('Position before update:', positionBeforeUpdate);
-                            
-                            console.log('Updating position status to closed');
-                            
-                            // Use XHR helper for position update
-                            let updatePositionResponse;
-                            try {
-                                updatePositionResponse = await makePatchRequest(`/api/positions/${positionId}`, {
-                                    status: 'closed'
-                                });
-                                console.log(`Position PATCH successful: Status ${updatePositionResponse.status}`);
-                            } catch (error) {
-                                console.error(`Position PATCH failed:`, error);
-                                throw new Error(`Position PATCH failed: ${error.status} ${error.statusText} - ${error.responseText}`);
-                            }
-
-                            // Verify the position status was updated
-                            console.log('Verifying position status update...');
+                            // Verify the position status was automatically updated to closed
+                            console.log('Verifying position status was automatically updated...');
                             const verifyUpdateResponse = await fetch(`/api/positions/${positionId}`);
                             if (!verifyUpdateResponse.ok) {
                                 const errorData = await verifyUpdateResponse.json();
@@ -402,6 +428,11 @@
                             }
                             const positionAfterUpdate = await verifyUpdateResponse.json();
                             console.log('Position after update:', positionAfterUpdate);
+                            
+                            // Verify position status is closed
+                            if (positionAfterUpdate.status.toLowerCase() !== 'closed') {
+                                throw new Error(`Position status should have been automatically set to 'closed' but was '${positionAfterUpdate.status}'`);
+                            }
 
                             // Verify the candidate was actually updated to Hired status
                             const checkCandidateResponse = await fetch(`/api/candidates/${candidate1Id}`);
@@ -414,6 +445,16 @@
                             if (updatedCandidate.status !== 'Hired') {
                                 throw new Error(`Candidate status should be 'Hired' but was '${updatedCandidate.status}'`);
                             }
+                            
+                            // Verify the candidate has Interview stage marked as 'Passed'
+                            if (!updatedCandidate.stages?.Interview?.status || updatedCandidate.stages.Interview.status !== 'Passed') {
+                                throw new Error(`Interview stage status should be 'Passed' but was '${updatedCandidate.stages?.Interview?.status || 'not set'}'`);
+                            }
+                            
+                            // Verify the candidate has Hired stage marked as 'Hired'
+                            if (!updatedCandidate.stages?.Hired?.status || updatedCandidate.stages.Hired.status !== 'Hired') {
+                                throw new Error(`Hired stage status should be 'Hired' but was '${updatedCandidate.stages?.Hired?.status || 'not set'}'`);
+                            }
                         }
                     } catch (error) {
                         throw new Error(`Failed to update candidate 1 to ${stage}: ${error.message}`);
@@ -421,6 +462,7 @@
                 }
                 
                 // Progress second candidate to Interview
+                currentStage = 'New'; // Reset the current stage for the second candidate
                 for (const stage of stages) {
                     console.log(`Updating candidate 2 to stage: ${stage}`);
                     try {
@@ -431,6 +473,8 @@
                         try {
                             updateResponse = await makePatchRequest(`/api/candidates/${candidate2Id}`, {
                                 status: stage,
+                                currentStage: currentStage,
+                                stageStatus: 'Passed',
                                 reviewer: 'Test Reviewer',
                                 notes: 'Test notes',
                                 action: 'pass'
@@ -441,6 +485,9 @@
                             throw new Error(`PATCH request failed: ${error.status} ${error.statusText} - ${error.responseText}`);
                         }
                         
+                        // Update currentStage for the next iteration
+                        currentStage = stage;
+                        
                         // Verify stage was recorded correctly
                         console.log(`Verifying stage record for ${stage}`);
                         const checkStageResponse = await fetch(`/api/candidates/${candidate2Id}`);
@@ -450,8 +497,8 @@
                         }
                         const candidateWithStage = await checkStageResponse.json();
                         console.log(`Stage data for ${stage}:`, candidateWithStage.stages[stage]);
-                        if (!candidateWithStage.stages[stage] || !candidateWithStage.stages[stage].completed) {
-                            throw new Error(`Stage ${stage} was not properly recorded`);
+                        if (!candidateWithStage.stages[stage]) {
+                            throw new Error(`Stage ${stage} was not found in candidate data`);
                         }
                     } catch (error) {
                         throw new Error(`Failed to update candidate 2 to ${stage}: ${error.message}`);
@@ -494,6 +541,250 @@
                     hiredCount,
                     interviewCount,
                     positionStatus: updatedPosition.status
+                };
+            }
+        },
+        {
+            name: 'Stage Count Logic',
+            run: async () => {
+                // 1. Create a position
+                const position = {
+                    title: 'Stage Count Test Position',
+                    department: 'Engineering',
+                    hiringManager: 'Test Manager',
+                    timeline: 'Q1'
+                };
+                
+                const createResponse = await fetch('/api/positions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(position)
+                });
+                
+                if (!createResponse.ok) throw new Error('Failed to create position');
+                const { id: positionId } = await createResponse.json();
+                
+                // 2. Create a candidate for the position
+                const candidate = {
+                    name: `Stage Count Test Candidate ${Date.now()}`, // Add timestamp for uniqueness
+                    email: `stagecount-${Date.now()}@example.com`, // Add timestamp for uniqueness
+                    position: position.title,
+                    source: 'Recruiter'
+                };
+                
+                const createCandidateResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(candidate)
+                });
+                
+                if (!createCandidateResponse.ok) throw new Error('Failed to create candidate');
+                const { id: candidateId } = await createCandidateResponse.json();
+                
+                // 3. Progress candidate to CV Review stage
+                console.log('Progressing candidate to CV Review stage');
+                try {
+                    let updateResponse = await makePatchRequest(`/api/candidates/${candidateId}`, {
+                        status: 'CV Review',
+                        currentStage: 'New',
+                        stageStatus: 'Passed',
+                        reviewer: 'Test Reviewer',
+                        notes: 'Test notes',
+                        action: 'pass'
+                    });
+                    
+                    if (!updateResponse.ok) throw new Error('Failed to update candidate to CV Review');
+                } catch (error) {
+                    throw new Error(`Failed to update candidate: ${error.message}`);
+                }
+                
+                // 4. Verify the candidate data and stage statuses
+                const getCandidateResponse = await fetch(`/api/candidates/${candidateId}`);
+                if (!getCandidateResponse.ok) throw new Error('Failed to get updated candidate');
+                const updatedCandidate = await getCandidateResponse.json();
+                
+                console.log('Candidate after update:', updatedCandidate);
+                
+                // Verify New stage is marked as Passed
+                if (updatedCandidate.stages?.New?.status !== 'Passed') {
+                    throw new Error(`New stage should be 'Passed' but was '${updatedCandidate.stages?.New?.status || 'not set'}'`);
+                }
+                
+                // Verify CV Review stage is In Progress
+                if (updatedCandidate.stages?.['CV Review']?.status !== 'In Progress') {
+                    throw new Error(`CV Review stage should be 'In Progress' but was '${updatedCandidate.stages?.['CV Review']?.status || 'not set'}'`);
+                }
+                
+                // 5. Get positions with candidates to check stage counts
+                const getPositionsResponse = await fetch('/api/positions');
+                if (!getPositionsResponse.ok) throw new Error('Failed to get positions');
+                const positions = await getPositionsResponse.json();
+                
+                // Find our test position
+                const testPosition = positions.find(p => p._id === positionId);
+                if (!testPosition) throw new Error('Test position not found');
+                
+                // 6. Manually calculate stage counts using the same logic as our function
+                const allCandidatesResponse = await fetch('/api/candidates');
+                if (!allCandidatesResponse.ok) throw new Error('Failed to get all candidates');
+                const allCandidates = await allCandidatesResponse.json();
+                
+                // Count CV Review stage with In Progress status
+                const cvReviewCount = allCandidates.filter(c => 
+                    c.position === position.title && 
+                    c.name === candidate.name && // Ensure we're only counting our test candidate
+                    c.stages?.['CV Review']?.status === 'In Progress'
+                ).length;
+                
+                // This should be 1 based on our test setup
+                if (cvReviewCount !== 1) {
+                    throw new Error(`Expected CV Review count to be 1, but got ${cvReviewCount}`);
+                }
+                
+                // Count New stage with In Progress status (should be 0 since we passed it)
+                const newStageCount = allCandidates.filter(c => 
+                    c.position === position.title && 
+                    c.name === candidate.name && // Ensure we're only counting our test candidate
+                    c.stages?.New?.status === 'In Progress'
+                ).length;
+                
+                if (newStageCount !== 0) {
+                    throw new Error(`Expected New stage count to be 0, but got ${newStageCount}`);
+                }
+                
+                return {
+                    success: true,
+                    cvReviewCount,
+                    newStageCount,
+                    candidate: {
+                        status: updatedCandidate.status,
+                        newStageStatus: updatedCandidate.stages?.New?.status,
+                        cvReviewStageStatus: updatedCandidate.stages?.['CV Review']?.status
+                    }
+                };
+            }
+        },
+        {
+            name: 'Interview to Hired Transition',
+            run: async () => {
+                // 1. Create a position
+                const position = {
+                    title: 'Hire Test Position',
+                    department: 'Engineering',
+                    hiringManager: 'Test Manager',
+                    timeline: 'Q1'
+                };
+                
+                const createResponse = await fetch('/api/positions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(position)
+                });
+                
+                if (!createResponse.ok) throw new Error('Failed to create position');
+                const { id: positionId } = await createResponse.json();
+                
+                // 2. Create a candidate for the position
+                const candidate = {
+                    name: 'Hire Test Candidate',
+                    email: 'hiretest@example.com',
+                    position: position.title,
+                    source: 'Recruiter'
+                };
+                
+                const createCandidateResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(candidate)
+                });
+                
+                if (!createCandidateResponse.ok) throw new Error('Failed to create candidate');
+                const { id: candidateId } = await createCandidateResponse.json();
+                
+                // 3. Progress candidate directly to Interview stage (skipping intermediate stages for simplicity)
+                console.log('Setting up candidate at Interview stage');
+                try {
+                    // First get the candidate to ensure we're using the correct currentStage
+                    const getInitialCandidateResponse = await fetch(`/api/candidates/${candidateId}`);
+                    if (!getInitialCandidateResponse.ok) throw new Error('Failed to get initial candidate data');
+                    const initialCandidate = await getInitialCandidateResponse.json();
+                    
+                    // Update from New to Interview (directly for test simplicity)
+                    let updateResponse = await makePatchRequest(`/api/candidates/${candidateId}`, {
+                        status: 'Interview',
+                        currentStage: initialCandidate.status,
+                        stageStatus: 'Passed',
+                        reviewer: 'Test Reviewer',
+                        notes: 'Direct to Interview for testing',
+                        action: 'pass'
+                    });
+                    
+                    if (!updateResponse.ok) throw new Error('Failed to update candidate to Interview');
+                } catch (error) {
+                    throw new Error(`Failed to update candidate: ${error.message}`);
+                }
+                
+                // 4. Verify Interview stage is correctly set up
+                let verifyResponse = await fetch(`/api/candidates/${candidateId}`);
+                if (!verifyResponse.ok) throw new Error('Failed to verify candidate setup');
+                let verifyCandidate = await verifyResponse.json();
+                
+                console.log('Candidate after setup:', verifyCandidate);
+                
+                // 5. Now update from Interview to Hired
+                console.log('Updating candidate from Interview to Hired');
+                try {
+                    let hireResponse = await makePatchRequest(`/api/candidates/${candidateId}`, {
+                        status: 'Hired',
+                        currentStage: 'Interview',
+                        stageStatus: 'Passed', // This should be Passed, not Hired
+                        reviewer: 'Hiring Manager',
+                        notes: 'Excellent candidate',
+                        action: 'pass'
+                    });
+                    
+                    if (!hireResponse.ok) throw new Error('Failed to hire candidate');
+                } catch (error) {
+                    throw new Error(`Failed to hire candidate: ${error.message}`);
+                }
+                
+                // 6. Wait for the position update to complete
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 7. Verify the candidate data after hiring
+                const getHiredCandidateResponse = await fetch(`/api/candidates/${candidateId}`);
+                if (!getHiredCandidateResponse.ok) throw new Error('Failed to get hired candidate data');
+                const hiredCandidate = await getHiredCandidateResponse.json();
+                
+                console.log('Candidate after hiring:', hiredCandidate);
+                
+                // Verify Interview stage is marked as Passed
+                if (hiredCandidate.stages?.Interview?.status !== 'Passed') {
+                    throw new Error(`Interview stage should be 'Passed' but was '${hiredCandidate.stages?.Interview?.status || 'not set'}'`);
+                }
+                
+                // Verify Hired stage is created and marked as Hired
+                if (!hiredCandidate.stages?.Hired || hiredCandidate.stages?.Hired?.status !== 'Hired') {
+                    throw new Error(`Hired stage should be created with status 'Hired' but was '${hiredCandidate.stages?.Hired?.status || 'not set'}'`);
+                }
+                
+                // 8. Verify the position was automatically closed
+                const getPositionResponse = await fetch(`/api/positions/${positionId}`);
+                if (!getPositionResponse.ok) throw new Error('Failed to get position after hiring');
+                const positionAfterHiring = await getPositionResponse.json();
+                
+                console.log('Position after hiring:', positionAfterHiring);
+                
+                if (positionAfterHiring.status.toLowerCase() !== 'closed') {
+                    throw new Error(`Position should be automatically closed but status was '${positionAfterHiring.status}'`);
+                }
+                
+                return {
+                    success: true,
+                    positionStatus: positionAfterHiring.status,
+                    candidateStatus: hiredCandidate.status,
+                    interviewStageStatus: hiredCandidate.stages?.Interview?.status,
+                    hiredStageStatus: hiredCandidate.stages?.Hired?.status
                 };
             }
         }

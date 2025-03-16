@@ -9,13 +9,6 @@
         timeline: 'Q1'
     });
     
-    // Add state for delete confirmation
-    let showDeleteModal = $state(false);
-    let positionToDelete = $state(null);
-    
-    // Add this for modal handling
-    let modalBackdrop = $state(false);
-    
     const departments = [
         'Engineering',
         'Sales',
@@ -98,36 +91,6 @@
         }
     }
 
-    function confirmDelete(position) {
-        positionToDelete = position;
-        showDeleteModal = true;
-        modalBackdrop = true;
-        document.body.classList.add('modal-open');
-    }
-    
-    function closeModal() {
-        showDeleteModal = false;
-        modalBackdrop = false;
-        document.body.classList.remove('modal-open');
-    }
-    
-    async function handleDelete() {
-        try {
-            const response = await fetch(`/api/positions/${positionToDelete._id}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                closeModal();
-                window.location.reload();
-            } else {
-                throw new Error('Failed to delete position');
-            }
-        } catch (error) {
-            alert('Error deleting position: ' + error.message);
-        }
-    }
-
     function cancelForm() {
         showForm = false;
         newPosition = {
@@ -136,6 +99,23 @@
             hiringManager: '',
             timeline: 'Q1'
         };
+    }
+
+    // Replace confirmDelete and closeModal functions with direct delete function
+    async function deletePosition(position) {
+        try {
+            const response = await fetch(`/api/positions/${position._id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                throw new Error('Failed to delete position');
+            }
+        } catch (error) {
+            alert('Error deleting position: ' + error.message);
+        }
     }
 </script>
 
@@ -265,7 +245,7 @@
                                         </button>
                                         <button 
                                             class="btn btn-sm btn-outline-danger hover-fill"
-                                            onclick={() => confirmDelete(position)}
+                                            onclick={() => deletePosition(position)}
                                             aria-label={`Delete position: ${position.title}`}
                                         >
                                             <i class="bi bi-trash"></i>
@@ -279,48 +259,6 @@
             </div>
         </div>
     </div>
-
-    <!-- Delete Confirmation Modal -->
-    {#if showDeleteModal}
-        <div class="modal d-block" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Confirm Delete</h5>
-                        <button 
-                            type="button" 
-                            class="btn-close" 
-                            onclick={closeModal}
-                            aria-label="Close modal"
-                        ></button>
-                    </div>
-                    <div class="modal-body">
-                        Are you sure you want to delete the position: 
-                        <strong>{positionToDelete?.title}</strong>?
-                    </div>
-                    <div class="modal-footer">
-                        <button 
-                            type="button" 
-                            class="btn btn-secondary" 
-                            onclick={closeModal}
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            type="button" 
-                            class="btn btn-danger" 
-                            onclick={handleDelete}
-                        >
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {#if modalBackdrop}
-            <div class="modal-backdrop show"></div>
-        {/if}
-    {/if}
 </div>
 
 <style>

@@ -471,6 +471,208 @@
                     payCounts: payCounts
                 };
             }
+        },
+        {
+            name: 'Full Hiring Process E2E Flow',
+            run: async () => {
+                // 1. Create a position
+                const position = {
+                    title: 'E2E Hire Process Position',
+                    department: 'Engineering',
+                    hiringManager: 'E2E Test Manager',
+                    timeline: 'Q1'
+                };
+                
+                const createPositionResponse = await fetch('/api/positions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(position)
+                });
+                
+                if (!createPositionResponse.ok) throw new Error('Failed to create position');
+                const { id: positionId } = await createPositionResponse.json();
+                
+                // Verify position is open
+                const initialPositionResponse = await fetch(`/api/positions/${positionId}`);
+                if (!initialPositionResponse.ok) throw new Error('Failed to get initial position');
+                const initialPosition = await initialPositionResponse.json();
+                
+                if (initialPosition.status.toLowerCase() !== 'open') {
+                    throw new Error(`Initial position status should be Open but was ${initialPosition.status}`);
+                }
+                
+                // 2. Create multiple candidates for same position
+                const candidates = [
+                    {
+                        name: 'Hired Candidate',
+                        email: 'hired@example.com',
+                        source: 'Recruiter',
+                        position: position.title,
+                        requestedPay: 120000
+                    },
+                    {
+                        name: 'Interview Candidate',
+                        email: 'interview@example.com',
+                        source: 'Recruiter',
+                        position: position.title,
+                        requestedPay: 110000
+                    },
+                    {
+                        name: 'Failed Candidate',
+                        email: 'failed@example.com',
+                        source: 'Recruiter',
+                        position: position.title,
+                        requestedPay: 100000
+                    }
+                ];
+                
+                const candidateIds = [];
+                
+                for (const candidateData of candidates) {
+                    const createResponse = await fetch('/api/candidates', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(candidateData)
+                    });
+                    
+                    if (!createResponse.ok) throw new Error(`Failed to create candidate: ${candidateData.name}`);
+                    const { id } = await createResponse.json();
+                    candidateIds.push(id);
+                }
+                
+                // 3. Progress first candidate to Hired
+                const candidateToHire = candidateIds[0];
+                const stages = ['CV Review', 'Cultural Fit', 'Interview', 'Hired'];
+                let currentStage = 'New';
+                
+                for (const stage of stages) {
+                    const updateResponse = await fetch(`/api/candidates/${candidateToHire}`, {
+                        method: 'PATCH',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            status: stage,
+                            currentStage: currentStage,
+                            stageStatus: 'Passed',
+                            reviewer: 'E2E Tester',
+                            notes: `Passed ${currentStage}`,
+                            action: 'pass'
+                        })
+                    });
+                    
+                    if (!updateResponse.ok) {
+                        const errorText = await updateResponse.text();
+                        throw new Error(`Failed to update candidate to ${stage}: ${errorText}`);
+                    }
+                    
+                    currentStage = stage;
+                }
+                
+                // 4. Progress second candidate to Interview
+                const candidateToInterview = candidateIds[1];
+                currentStage = 'New';
+                
+                for (const stage of stages.slice(0, 3)) { // CV Review, Cultural Fit, Interview
+                    const updateResponse = await fetch(`/api/candidates/${candidateToInterview}`, {
+                        method: 'PATCH',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            status: stage,
+                            currentStage: currentStage,
+                            stageStatus: 'Passed',
+                            reviewer: 'E2E Tester',
+                            notes: `Passed ${currentStage}`,
+                            action: 'pass'
+                        })
+                    });
+                    
+                    if (!updateResponse.ok) {
+                        const errorText = await updateResponse.text();
+                        throw new Error(`Failed to update second candidate to ${stage}: ${errorText}`);
+                    }
+                    
+                    currentStage = stage;
+                }
+                
+                // 5. Fail the third candidate at CV Review
+                const candidateToFail = candidateIds[2];
+                const failUpdateResponse = await fetch(`/api/candidates/${candidateToFail}`, {
+                    method: 'PATCH',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        status: 'Failed',
+                        currentStage: 'New',
+                        stageStatus: 'Failed',
+                        reviewer: 'E2E Tester',
+                        notes: 'Not a good fit',
+                        action: 'fail'
+                    })
+                });
+                
+                if (!failUpdateResponse.ok) {
+                    const errorText = await failUpdateResponse.text();
+                    throw new Error(`Failed to fail candidate: ${errorText}`);
+                }
+                
+                // 6. Wait for the position status update to complete
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 7. Verify position is closed because of hired candidate
+                const finalPositionResponse = await fetch(`/api/positions/${positionId}`);
+                if (!finalPositionResponse.ok) throw new Error('Failed to get final position status');
+                const finalPosition = await finalPositionResponse.json();
+                
+                if (finalPosition.status.toLowerCase() !== 'closed') {
+                    throw new Error(`Position should be closed after hiring but was ${finalPosition.status}`);
+                }
+                
+                // 8. Verify candidate statuses
+                const getHiredResponse = await fetch(`/api/candidates/${candidateToHire}`);
+                if (!getHiredResponse.ok) throw new Error('Failed to get hired candidate');
+                const hiredCandidate = await getHiredResponse.json();
+                
+                const getInterviewResponse = await fetch(`/api/candidates/${candidateToInterview}`);
+                if (!getInterviewResponse.ok) throw new Error('Failed to get interview candidate');
+                const interviewCandidate = await getInterviewResponse.json();
+                
+                const getFailedResponse = await fetch(`/api/candidates/${candidateToFail}`);
+                if (!getFailedResponse.ok) throw new Error('Failed to get failed candidate');
+                const failedCandidate = await getFailedResponse.json();
+                
+                // Verify statuses
+                if (hiredCandidate.status !== 'Hired') {
+                    throw new Error(`Hired candidate status should be 'Hired' but was '${hiredCandidate.status}'`);
+                }
+                
+                if (interviewCandidate.status !== 'Interview') {
+                    throw new Error(`Interview candidate status should be 'Interview' but was '${interviewCandidate.status}'`);
+                }
+                
+                if (failedCandidate.status !== 'Failed') {
+                    throw new Error(`Failed candidate status should be 'Failed' but was '${failedCandidate.status}'`);
+                }
+                
+                // 9. Clean up
+                for (const id of candidateIds) {
+                    await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
+                }
+                await fetch(`/api/positions/${positionId}`, { method: 'DELETE' });
+                
+                return { 
+                    positionClosed: true,
+                    hiredCandidate: hiredCandidate.status === 'Hired',
+                    interviewCandidate: interviewCandidate.status === 'Interview',
+                    failedCandidate: failedCandidate.status === 'Failed'
+                };
+            }
         }
     ];
     

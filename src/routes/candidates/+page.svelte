@@ -11,11 +11,6 @@
         requestedPay: ''
     });
     
-    // Add state for delete confirmation
-    let showDeleteModal = $state(false);
-    let candidateToDelete = $state(null);
-    let modalBackdrop = $state(false);
-
     let showStatusModal = $state(false);
     let selectedCandidate = $state(null);
     let statusUpdate = $state({
@@ -116,13 +111,19 @@
         }
     }
 
-    async function deleteCandidate(candidateId) {
-        const response = await fetch(`/api/candidates/${candidateId}`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to delete candidate');
+    async function deleteCandidate(candidate) {
+        try {
+            const response = await fetch(`/api/candidates/${candidate._id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                window.location.reload();
+            } else {
+                throw new Error('Failed to delete candidate');
+            }
+        } catch (error) {
+            alert('Error deleting candidate: ' + error.message);
         }
     }
 
@@ -141,36 +142,6 @@
             window.location.reload();
         } catch (error) {
             alert('Error creating candidate: ' + error.message);
-        }
-    }
-
-    function toggleModal(show) {
-        modalBackdrop = show;
-        if (show) {
-            document.body.classList.add('modal-open');
-        } else {
-            document.body.classList.remove('modal-open');
-        }
-    }
-
-    function confirmDelete(candidate) {
-        candidateToDelete = candidate;
-        showDeleteModal = true;
-        toggleModal(true);
-    }
-    
-    function closeModal() {
-        showDeleteModal = false;
-        toggleModal(false);
-    }
-    
-    async function handleDelete() {
-        try {
-            await deleteCandidate(candidateToDelete._id);
-            closeModal();
-            window.location.reload();
-        } catch (error) {
-            alert('Error deleting candidate: ' + error.message);
         }
     }
 
@@ -228,12 +199,10 @@
         };
         
         showStatusModal = true;
-        toggleModal(true);
     }
 
     function closeStatusModal() {
         showStatusModal = false;
-        toggleModal(false);
         selectedCandidate = null;
         resetStatusUpdate();
     }
@@ -548,9 +517,9 @@
                                 <td class="align-middle">
                                     <div class="btn-group">
                                         <button 
-                                            class="btn btn-sm btn-outline-danger" 
-                                            onclick={() => confirmDelete(candidate)}
-                                            title="Delete candidate"
+                                            class="btn btn-sm btn-outline-danger hover-fill"
+                                            onclick={() => deleteCandidate(candidate)}
+                                            aria-label={`Delete candidate: ${candidate.name}`}
                                         >
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -639,46 +608,6 @@
                             </button>
                         </div>
                     </form>
-                </div>
-            </div>
-        </div>
-        {#if modalBackdrop}
-            <div class="modal-backdrop show"></div>
-        {/if}
-    {/if}
-
-    <!-- Delete Confirmation Modal -->
-    {#if showDeleteModal}
-        <div class="modal d-block" tabindex="-1">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Confirm Delete</h5>
-                    <button 
-                        type="button" 
-                        class="btn-close" 
-                        onclick={closeModal}
-                        aria-label="Close modal"
-                    ></button>
-                </div>
-                <div class="modal-body">
-                    Are you sure you want to delete the candidate: 
-                    <strong>{candidateToDelete?.name}</strong>?
-                </div>
-                <div class="modal-footer">
-                    <button 
-                        type="button" 
-                        class="btn btn-secondary" 
-                        onclick={closeModal}
-                    >
-                        Cancel
-                    </button>
-                    <button 
-                        type="button" 
-                        class="btn btn-danger" 
-                        onclick={handleDelete}
-                    >
-                        Delete
-                    </button>
                 </div>
             </div>
         </div>

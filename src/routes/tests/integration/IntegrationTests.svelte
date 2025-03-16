@@ -346,6 +346,131 @@
                     recoverySuccessful: validResponse.ok
                 };
             }
+        },
+        {
+            name: 'Candidate Hiring Process Integration',
+            run: async () => {
+                // 1. Create a position
+                const position = {
+                    title: 'Integrated Workflow Position',
+                    department: 'Engineering',
+                    hiringManager: 'Test Manager',
+                    timeline: 'Q1'
+                };
+                
+                const createPositionResponse = await fetch('/api/positions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(position)
+                });
+                
+                if (!createPositionResponse.ok) throw new Error('Failed to create position');
+                const { id: positionId } = await createPositionResponse.json();
+                
+                // 2. Create a candidate for this position
+                const candidate = {
+                    name: 'Hiring Process Candidate',
+                    email: 'hiring.process@example.com',
+                    source: 'Recruiter',
+                    position: position.title,
+                    requestedPay: 120000
+                };
+                
+                const createCandidateResponse = await fetch('/api/candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(candidate)
+                });
+                
+                if (!createCandidateResponse.ok) throw new Error('Failed to create candidate');
+                const { id: candidateId } = await createCandidateResponse.json();
+                
+                // 3. Verify initial candidate status
+                const initialCandidateResponse = await fetch(`/api/candidates/${candidateId}`);
+                if (!initialCandidateResponse.ok) throw new Error('Failed to get candidate');
+                const initialCandidate = await initialCandidateResponse.json();
+                
+                if (initialCandidate.status !== 'New') throw new Error('Initial status should be New');
+                if (!initialCandidate.stages?.New?.status) throw new Error('Missing New stage status');
+                if (initialCandidate.stages.New.status !== 'In Progress') throw new Error('New stage should be In Progress');
+                
+                // 4. Progress candidate through stages
+                const stages = ['CV Review', 'Cultural Fit', 'Interview', 'Hired'];
+                let currentStage = 'New';
+                
+                for (const stage of stages) {
+                    // Update candidate to next stage
+                    const updateResponse = await fetch(`/api/candidates/${candidateId}`, {
+                        method: 'PATCH',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            status: stage,
+                            currentStage: currentStage,
+                            stageStatus: 'Passed',
+                            reviewer: 'Integration Tester',
+                            notes: `Passed ${currentStage}`,
+                            action: 'pass'
+                        })
+                    });
+                    
+                    if (!updateResponse.ok) {
+                        const errorText = await updateResponse.text();
+                        throw new Error(`Failed to update candidate to ${stage}: ${errorText}`);
+                    }
+                    
+                    // Verify the update
+                    const updatedCandidateResponse = await fetch(`/api/candidates/${candidateId}`);
+                    if (!updatedCandidateResponse.ok) throw new Error(`Failed to get candidate after ${stage} update`);
+                    const updatedCandidate = await updatedCandidateResponse.json();
+                    
+                    // Verify previous stage is marked as passed
+                    if (updatedCandidate.stages?.[currentStage]?.status !== 'Passed') {
+                        throw new Error(`${currentStage} stage should be Passed but was ${updatedCandidate.stages?.[currentStage]?.status}`);
+                    }
+                    
+                    // For stages before Hired, verify the new stage is In Progress
+                    if (stage !== 'Hired') {
+                        if (updatedCandidate.stages?.[stage]?.status !== 'In Progress') {
+                            throw new Error(`${stage} stage should be In Progress but was ${updatedCandidate.stages?.[stage]?.status}`);
+                        }
+                    } else {
+                        // For Hired stage, verify it's actually Hired
+                        if (updatedCandidate.stages?.Hired?.status !== 'Hired') {
+                            throw new Error(`Hired stage should be Hired but was ${updatedCandidate.stages?.Hired?.status}`);
+                        }
+                    }
+                    
+                    // Update current stage for next iteration
+                    currentStage = stage;
+                    
+                    // If we just hired the candidate, verify the position was closed
+                    if (stage === 'Hired') {
+                        // Wait for position update to complete
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        const positionResponse = await fetch(`/api/positions/${positionId}`);
+                        if (!positionResponse.ok) throw new Error('Failed to get position after hiring');
+                        const updatedPosition = await positionResponse.json();
+                        
+                        if (updatedPosition.status.toLowerCase() !== 'closed') {
+                            throw new Error(`Position should be closed after hiring but was ${updatedPosition.status}`);
+                        }
+                    }
+                }
+                
+                // 5. Clean up
+                await fetch(`/api/candidates/${candidateId}`, { method: 'DELETE' });
+                await fetch(`/api/positions/${positionId}`, { method: 'DELETE' });
+                
+                return { 
+                    stagesCompleted: stages.length,
+                    positionClosed: true,
+                    candidateHired: true
+                };
+            }
         }
     ];
     
