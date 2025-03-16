@@ -77,17 +77,26 @@
     }
 
     async function updateCandidateStatus(candidateId, updateData) {
-        const response = await fetch(`/api/candidates/${candidateId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updateData)
-        });
-        
-        const responseData = await response.json();
-        if (!response.ok) {
-            throw new Error(responseData.error || responseData.details || 'Failed to update candidate status');
+        try {
+            const response = await fetch(`/api/candidates/${candidateId}`, {
+                method: 'PATCH',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(updateData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || errorData.details || 'Failed to update candidate status');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Update error:', error);
+            throw error;
         }
-        return responseData;
     }
 
     async function deleteCandidate(candidateId) {
@@ -213,18 +222,6 @@
                 action: statusUpdate.action
             });
             
-            // If the candidate is hired, update the position status to closed
-            if (statusUpdate.status === 'Hired') {
-                const position = data.openPositions.find(p => p.title === selectedCandidate.position);
-                if (position?._id) {
-                    await fetch(`/api/positions/${position._id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: 'closed' })
-                    });
-                }
-            }
-            
             closeStatusModal();
             window.location.reload();
         } catch (error) {
@@ -263,6 +260,13 @@
 
         // Future/incomplete stages are outlined in gray
         return 'btn-outline-secondary';
+    }
+
+    function getStageCount(position, stage) {
+        // Implementation of getStageCount function
+        // This function should return the count of candidates in the specified stage
+        // For now, we'll use a placeholder implementation
+        return 0; // Placeholder return, actual implementation needed
     }
 </script>
 
