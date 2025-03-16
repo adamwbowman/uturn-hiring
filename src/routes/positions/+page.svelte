@@ -246,61 +246,54 @@
 
             <!-- Table -->
             <div class="table-responsive">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Department</th>
-                            <th>Title</th>
-                            <th>Hiring Manager</th>
-                            <th>Stage Map</th>
-                            <th>Timeline</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
+                <table class="table position-table">
                     <tbody>
                         {#each data.positions as position}
                             <tr>
-                                <td>
-                                    <button class="btn btn-sm {position.status.toLowerCase() === 'open' ? 'btn-success' : 'btn-secondary'}" disabled>
+                                <td class="align-middle status-col">
+                                    <button class="btn btn-sm {position.status.toLowerCase() === 'open' ? 'btn-success' : 'btn-danger'}" 
+                                            style="width: 80px;" 
+                                            disabled>
                                         {position.status.toLowerCase() === 'open' ? 'Open' : 'Closed'}
                                     </button>
                                 </td>
-                                <td>
-                                    <button class="btn btn-sm btn-outline-secondary" disabled>
+                                <td class="align-middle dept-col">
+                                    <button class="btn btn-sm btn-outline-secondary department-btn" disabled>
                                         {position.department}
                                     </button>
                                 </td>
-                                <td>{position.title}</td>
-                                <td>{position.hiringManager}</td>
-                                <td>
-                                    <div class="d-flex gap-1 flex-nowrap">
+                                <td class="align-middle title-col">
+                                    <div class="d-flex">
+                                        <div class="fw-bold title-text">{position.title}</div>
+                                        <div class="text-muted small ms-3 manager-text">{position.hiringManager}</div>
+                                    </div>
+                                </td>
+                                <td class="align-middle text-end stage-col">
+                                    <div class="d-flex gap-1 flex-nowrap justify-content-end">
                                         {#each stages as stage}
                                             {@const count = getStageCount(position, stage)}
                                             <button 
-                                                class="btn btn-sm {getStageButtonStyle(count, stage, position)}"
-                                                style="text-align: center; padding: 0.25rem 0.75rem; {stage === 'New' || stage === 'Hired' ? 'width: 65px;' : ''}"
+                                                class="btn btn-sm {getStageButtonStyle(count, stage, position)} stage-btn"
                                                 disabled
                                             >
-                                                <div class="fw-bold">{stage}</div>
-                                                <div class="small">{count}</div>
+                                                {stage === 'Hired' ? 'Hired' : `${stage}: ${count}`}
                                             </button>
                                         {/each}
                                     </div>
                                 </td>
-                                <td>
-                                    <button class="btn btn-sm btn-outline-secondary" disabled>
-                                        {position.timeline}
-                                    </button>
-                                </td>
-                                <td>
-                                    <button 
-                                        class="btn btn-sm btn-danger"
-                                        onclick={() => confirmDelete(position)}
-                                        aria-label={`Delete position: ${position.title}`}
-                                    >
-                                        <i class="bi bi-trash"></i>
-                                    </button>
+                                <td class="align-middle action-col">
+                                    <div class="d-flex">
+                                        <button class="btn btn-sm btn-info me-2 text-white" disabled>
+                                            {position.timeline}
+                                        </button>
+                                        <button 
+                                            class="btn btn-sm btn-outline-danger hover-fill"
+                                            onclick={() => confirmDelete(position)}
+                                            aria-label={`Delete position: ${position.title}`}
+                                        >
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         {/each}
@@ -361,5 +354,60 @@
 
     .w-100px {
         width: 100px;
+    }
+    
+    .hover-fill:hover {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    .department-btn {
+        width: 110px;
+        text-align: center;
+    }
+    
+    .stage-btn {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.5rem;
+        text-align: center;
+        white-space: nowrap;
+        line-height: 1.2;
+    }
+    
+    .position-table {
+        table-layout: fixed;
+        width: 100%;
+    }
+    
+    .status-col {
+        width: 100px;
+    }
+    
+    .dept-col {
+        width: 120px;
+    }
+    
+    .title-col {
+        width: 40%;
+    }
+    
+    .stage-col {
+        width: 30%;
+    }
+    
+    .action-col {
+        width: 15%;
+    }
+    
+    .title-text {
+        width: 55%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .manager-text {
+        width: 45%;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 </style> 
