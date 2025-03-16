@@ -1,9 +1,40 @@
 import { json } from '@sveltejs/kit';
 import { getCollection } from '$lib/data/dbConn.js';
 
+// Migration function to update existing candidates
+async function migrateExistingCandidates(collection) {
+    try {
+        // Find all candidates without stages field
+        const result = await collection.updateMany(
+            { stages: { $exists: false } },
+            {
+                $set: {
+                    stages: {
+                        'New': {
+                            status: 'New',
+                            reviewer: 'System',
+                            notes: 'Initial status',
+                            updatedAt: new Date(),
+                            completed: true
+                        }
+                    }
+                }
+            }
+        );
+        
+        console.log(`Updated ${result.modifiedCount} candidates with stages field`);
+    } catch (error) {
+        console.error('Migration error:', error);
+    }
+}
+
 export async function GET() {
     try {
         const collection = await getCollection('candidates');
+        
+        // Run migration
+        await migrateExistingCandidates(collection);
+        
         const candidates = await collection.find()
             .sort({ createdAt: -1 })
             .toArray();
@@ -73,6 +104,15 @@ export async function POST({ request }) {
         const result = await collection.insertOne({
             ...sanitizedCandidate,
             status: 'New',
+            stages: {
+                'New': {
+                    status: 'Passed',
+                    reviewer: 'System',
+                    notes: 'Initial status',
+                    updatedAt: new Date(),
+                    completed: true
+                }
+            },
             createdAt: new Date()
         });
 

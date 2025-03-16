@@ -15,81 +15,29 @@
     let showDeleteModal = $state(false);
     let candidateToDelete = $state(null);
     let modalBackdrop = $state(false);
-    
+
+    let showStatusModal = $state(false);
+    let selectedCandidate = $state(null);
+    let statusUpdate = $state({
+        status: '',
+        reviewer: '',
+        notes: '',
+        action: '' // 'pass' or 'fail'
+    });
+
+    const statusFlow = {
+        'New': { next: 'CV Review', color: 'info' },
+        'CV Review': { next: 'Cultural Fit', color: 'warning' },
+        'Cultural Fit': { next: 'Interview', color: 'warning' },
+        'Interview': { next: 'Hired', color: 'warning' }
+    };
+
     function toggleForm() {
         showForm = !showForm;
     }
 
-    async function handleSubmit(event) {
-        event.preventDefault();
-        
-        // Convert requestedPay to number if not empty
-        const candidateData = {
-            ...newCandidate,
-            requestedPay: newCandidate.requestedPay ? Number(newCandidate.requestedPay) : undefined
-        };
-
-        try {
-            const response = await fetch('/api/candidates', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(candidateData)
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Failed to create candidate');
-            }
-            
-            // Reset form and hide it
-            newCandidate = {
-                name: '',
-                email: '',
-                source: '',
-                sourceContact: '',
-                position: '',
-                requestedPay: ''
-            };
-            showForm = false;
-            
-            window.location.reload();
-        } catch (error) {
-            alert('Error creating candidate: ' + error.message);
-        }
-    }
-
-    function confirmDelete(candidate) {
-        candidateToDelete = candidate;
-        showDeleteModal = true;
-        modalBackdrop = true;
-        document.body.classList.add('modal-open');
-    }
-    
-    function closeModal() {
-        showDeleteModal = false;
-        modalBackdrop = false;
-        document.body.classList.remove('modal-open');
-    }
-    
-    async function handleDelete() {
-        try {
-            const response = await fetch(`/api/candidates/${candidateToDelete._id}`, {
-                method: 'DELETE'
-            });
-            
-            if (response.ok) {
-                closeModal();
-                window.location.reload();
-            } else {
-                throw new Error('Failed to delete candidate');
-            }
-        } catch (error) {
-            alert('Error deleting candidate: ' + error.message);
-        }
-    }
-
-    function cancelForm() {
-        showForm = false;
+    // Add state reset functions
+    function resetNewCandidate() {
         newCandidate = {
             name: '',
             email: '',
@@ -100,17 +48,209 @@
         };
     }
 
+    function resetStatusUpdate() {
+        statusUpdate = {
+            status: '',
+            reviewer: '',
+            notes: '',
+            action: ''
+        };
+    }
+
+    function cancelForm() {
+        showForm = false;
+        resetNewCandidate();
+    }
+
+    async function createCandidate(candidateData) {
+        const response = await fetch('/api/candidates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(candidateData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create candidate');
+        }
+        return response.json();
+    }
+
+    async function updateCandidateStatus(candidateId, updateData) {
+        const response = await fetch(`/api/candidates/${candidateId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData)
+        });
+        
+        const responseData = await response.json();
+        if (!response.ok) {
+            throw new Error(responseData.error || responseData.details || 'Failed to update candidate status');
+        }
+        return responseData;
+    }
+
+    async function deleteCandidate(candidateId) {
+        const response = await fetch(`/api/candidates/${candidateId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete candidate');
+        }
+    }
+
+    async function handleSubmit(event) {
+        event.preventDefault();
+        
+        const candidateData = {
+            ...newCandidate,
+            requestedPay: newCandidate.requestedPay ? Number(newCandidate.requestedPay) : undefined
+        };
+
+        try {
+            await createCandidate(candidateData);
+            resetNewCandidate();
+            showForm = false;
+            window.location.reload();
+        } catch (error) {
+            alert('Error creating candidate: ' + error.message);
+        }
+    }
+
+    function toggleModal(show) {
+        modalBackdrop = show;
+        if (show) {
+            document.body.classList.add('modal-open');
+        } else {
+            document.body.classList.remove('modal-open');
+        }
+    }
+
+    function confirmDelete(candidate) {
+        candidateToDelete = candidate;
+        showDeleteModal = true;
+        toggleModal(true);
+    }
+    
+    function closeModal() {
+        showDeleteModal = false;
+        toggleModal(false);
+    }
+    
+    async function handleDelete() {
+        try {
+            await deleteCandidate(candidateToDelete._id);
+            closeModal();
+            window.location.reload();
+        } catch (error) {
+            alert('Error deleting candidate: ' + error.message);
+        }
+    }
+
     function formatCurrency(amount) {
         if (!amount) return '-';
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: 'USD'
+            currency: 'USD',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
         }).format(amount);
     }
 
     function getPayType(amount) {
         if (!amount) return '';
         return amount < 1000 ? '/hourly' : '/salary';
+    }
+
+    function getStatusColor(status) {
+        if (status === 'Failed') return 'danger';
+        if (status === 'Hired') return 'success';
+        return statusFlow[status]?.color || 'secondary';
+    }
+
+    function openStatusModal(candidate) {
+        selectedCandidate = candidate;
+        statusUpdate = {
+            action: 'pass',
+            status: statusFlow[candidate.status]?.next || candidate.status,
+            reviewer: '',
+            notes: ''
+        };
+        showStatusModal = true;
+        toggleModal(true);
+    }
+
+    function closeStatusModal() {
+        showStatusModal = false;
+        toggleModal(false);
+        selectedCandidate = null;
+        resetStatusUpdate();
+    }
+
+    async function handleStatusUpdate(event) {
+        event.preventDefault();
+        
+        if (!statusUpdate.reviewer) {
+            alert('Reviewer name is required');
+            return;
+        }
+
+        if (statusUpdate.status === 'Failed' && !statusUpdate.notes) {
+            alert('Notes are required when failing a candidate');
+            return;
+        }
+        
+        try {
+            if (!selectedCandidate?._id) {
+                throw new Error('Invalid candidate ID');
+            }
+
+            await updateCandidateStatus(selectedCandidate._id, {
+                status: statusUpdate.status,
+                reviewer: statusUpdate.reviewer,
+                notes: statusUpdate.notes,
+                action: statusUpdate.action
+            });
+            
+            closeStatusModal();
+            window.location.reload();
+        } catch (error) {
+            console.error('Error details:', error);
+            alert('Error updating candidate status: ' + error.message);
+        }
+    }
+
+    function getPositionHiringManager(positionTitle) {
+        const position = data.openPositions.find(p => p.title === positionTitle);
+        return position?.hiringManager || '-';
+    }
+
+    function formatDate(date) {
+        if (!date) return '';
+        return new Date(date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    }
+
+    function getStageButtonStyle(stage, candidateStatus, stageData) {
+        // For stages that have been completed (have stageData with completed=true)
+        if (stageData?.completed) {
+            if (stageData.status === 'Failed') return 'btn-danger';      // Red for failed stages
+            if (stageData.status === 'Passed') return 'btn-success';     // Green for passed stages
+            if (stageData.status === 'Skipped') return 'btn-secondary';  // Gray for skipped stages
+        }
+
+        // For the current active stage, use its color from statusFlow
+        if (candidateStatus === stage) return `btn-${getStatusColor(stage)}`;
+
+        // If candidate is hired, all stages are green
+        if (candidateStatus === 'Hired') return 'btn-success';
+
+        // Future/incomplete stages are outlined in gray
+        return 'btn-outline-secondary';
     }
 </script>
 
@@ -204,9 +344,7 @@
                                 class="form-control" 
                                 id="requestedPay"
                                 bind:value={newCandidate.requestedPay}
-                                min="0"
-                                step="1000"
-                                placeholder="Annual salary"
+                                placeholder="Enter amount"
                             >
                         </div>
 
@@ -243,9 +381,23 @@
                         {#each data.candidates as candidate}
                             <tr>
                                 <td>
-                                    <button class="btn btn-sm {candidate.status === 'New' ? 'btn-info' : 'btn-secondary'}" disabled>
-                                        {candidate.status}
-                                    </button>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <button 
+                                            class="btn btn-sm btn-{getStatusColor(candidate.status)}" 
+                                            disabled
+                                        >
+                                            {candidate.status}
+                                        </button>
+                                        {#if candidate.status !== 'Failed' && candidate.status !== 'Hired'}
+                                            <button 
+                                                class="btn btn-sm btn-{getStatusColor(candidate.status)}"
+                                                onclick={() => openStatusModal(candidate)}
+                                                title="Update status"
+                                            >
+                                                <i class="bi bi-fast-forward-fill"></i>
+                                            </button>
+                                        {/if}
+                                    </div>
                                 </td>
                                 <td>
                                     <div>{candidate.name}</div>
@@ -255,9 +407,34 @@
                                         </a>
                                     </div>
                                 </td>
-                                <td>{candidate.position}</td>
                                 <td>
-                                    <!-- Empty Stage Map column -->
+                                    <div>{candidate.position}</div>
+                                    <div class="text-muted small">
+                                        {getPositionHiringManager(candidate.position)}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex gap-1 flex-nowrap">
+                                        {#each ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'] as stage}
+                                            {@const stageData = candidate.stages?.[stage]}
+                                            <button 
+                                                class="btn btn-sm {getStageButtonStyle(stage, candidate.status, stageData)}"
+                                                style="min-width: 120px; font-size: 0.7rem; padding: 0.2rem 0.4rem;"
+                                                title={stageData ? `Stage: ${stage}\nOutcome: ${stageData.status}\nReviewer: ${stageData.reviewer}\nDate: ${formatDate(stageData.updatedAt)}${stageData.notes ? '\nNotes: ' + stageData.notes : ''}` : ''}
+                                                disabled
+                                            >
+                                                <div class="text-start">
+                                                    <div class="fw-bold">{stage}</div>
+                                                    {#if stageData}
+                                                        <div class="small opacity-75">
+                                                            <div>{stageData.status}</div>
+                                                            <div>{formatDate(stageData.updatedAt)}</div>
+                                                        </div>
+                                                    {/if}
+                                                </div>
+                                            </button>
+                                        {/each}
+                                    </div>
                                 </td>
                                 <td>
                                     <div>{candidate.source || '-'}</div>
@@ -272,13 +449,15 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <button 
-                                        class="btn btn-sm btn-danger"
-                                        onclick={() => confirmDelete(candidate)}
-                                        aria-label={`Delete candidate: ${candidate.name}`}
-                                    >
-                                        <i class="bi bi-trash"></i>
-                                    </button>
+                                    <div class="btn-group">
+                                        <button 
+                                            class="btn btn-sm btn-danger" 
+                                            onclick={() => confirmDelete(candidate)}
+                                            title="Delete candidate"
+                                        >
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         {/each}
@@ -287,6 +466,93 @@
             </div>
         </div>
     </div>
+
+    <!-- Status Update Modal -->
+    {#if showStatusModal}
+        <div class="modal show d-block" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            Update Candidate Status
+                        </h5>
+                        <button type="button" class="btn-close" onclick={closeStatusModal}></button>
+                    </div>
+                    <form onsubmit={handleStatusUpdate}>
+                        <div class="modal-body">
+                            <!-- Stage Map -->
+                            <div class="mb-4">
+                                <div class="d-flex gap-1 flex-nowrap justify-content-center">
+                                    {#each ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'] as stage}
+                                        {@const stageData = selectedCandidate?.stages?.[stage]}
+                                        <button 
+                                            class="btn btn-sm {getStageButtonStyle(stage, selectedCandidate?.status, stageData)}"
+                                            style="text-align: center; padding: 0.25rem 0.75rem; {stage === 'New' || stage === 'Hired' ? 'width: 65px;' : ''}"
+                                            disabled
+                                        >
+                                            {stage}
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Candidate: {selectedCandidate?.name}</label>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Your Name *</label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    bind:value={statusUpdate.reviewer}
+                                    required
+                                >
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    Notes {statusUpdate.action === 'fail' ? '*' : '(optional)'}
+                                </label>
+                                <textarea 
+                                    class="form-control" 
+                                    bind:value={statusUpdate.notes}
+                                    required={statusUpdate.action === 'fail'}
+                                    rows="3"
+                                ></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" onclick={closeStatusModal}>
+                                Cancel
+                            </button>
+                            <button 
+                                type="submit" 
+                                class="btn btn-danger me-2"
+                                onclick={() => {
+                                    statusUpdate.action = 'fail';
+                                    statusUpdate.status = 'Failed';
+                                }}
+                            >
+                                Fail
+                            </button>
+                            <button 
+                                type="submit" 
+                                class="btn btn-success"
+                                onclick={() => {
+                                    statusUpdate.action = 'pass';
+                                    statusUpdate.status = statusFlow[selectedCandidate.status]?.next || selectedCandidate.status;
+                                }}
+                            >
+                                Pass
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {#if modalBackdrop}
+            <div class="modal-backdrop show"></div>
+        {/if}
+    {/if}
 
     <!-- Delete Confirmation Modal -->
     {#if showDeleteModal}
@@ -323,9 +589,6 @@
                 </div>
             </div>
         </div>
-        {#if modalBackdrop}
-            <div class="modal-backdrop show"></div>
-        {/if}
     {/if}
 </div>
 
