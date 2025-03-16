@@ -97,7 +97,7 @@ export async function PATCH({ params, request }) {
         const updateData = await request.json();
         console.log('Update payload:', updateData);
         
-        const { status, reviewer, notes, action } = updateData;
+        const { status, stageStatus, currentStage, reviewer, notes, action } = updateData;
         
         // Validate status transition
         const validStatuses = ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired', 'Failed'];
@@ -105,6 +105,18 @@ export async function PATCH({ params, request }) {
             console.error('Invalid status:', status);
             return json(
                 { error: 'Invalid status' },
+                { 
+                    status: 400,
+                    headers: corsHeaders()
+                }
+            );
+        }
+        
+        // Validate current stage
+        if (!validStatuses.includes(currentStage)) {
+            console.error('Invalid current stage:', currentStage);
+            return json(
+                { error: 'Invalid current stage' },
                 { 
                     status: 400,
                     headers: corsHeaders()
@@ -147,10 +159,10 @@ export async function PATCH({ params, request }) {
             );
         }
         
-        const collection = await getCollection('candidates');
+        const candidateCollection = await getCollection('candidates');
 
         // First check if the candidate exists
-        const candidate = await collection.findOne({ _id: new ObjectId(params.id) });
+        const candidate = await candidateCollection.findOne({ _id: new ObjectId(params.id) });
         if (!candidate) {
             console.error('Candidate not found:', params.id);
             return json(
@@ -164,24 +176,57 @@ export async function PATCH({ params, request }) {
 
         console.log('Found candidate:', candidate);
 
+        // Create appropriate stage data based on the action
         const stageData = {
-            status: action === 'pass' ? 'Passed' : 'Failed',
+            status: stageStatus || (action === 'pass' ? 'Passed' : 'Failed'),
             reviewer,
             notes: notes || '',
             updatedAt: new Date(),
             completed: true
         };
 
+        // Determine display status
+        let displayStatus = status;
+        if (['CV Review', 'Cultural Fit'].includes(status) && action === 'pass') {
+            displayStatus = 'In Progress';
+        } else if (currentStage === 'Interview' && action === 'pass') {
+            // When passing Interview stage, set display status to "Hired"
+            displayStatus = 'Hired';
+        }
+
+        // Create the update operation
         const update = {
             $set: { 
-                status,
-                [`stages.${status}`]: stageData
+                status: displayStatus, // This sets the candidate's overall status
+                [`stages.${currentStage}`]: stageData // This records the outcome for the current stage
             }
         };
         
+        // Special case: When passing the Interview stage, automatically create a Hired record
+        if (currentStage === 'Interview' && action === 'pass') {
+            update.$set['stages.Hired'] = {
+                status: 'Hired',
+                reviewer: reviewer, // Use the same reviewer who passed the interview
+                notes: '',
+                updatedAt: new Date(),
+                completed: true
+            };
+        }
+        
+        // If moving to a new stage and it's not Failed or Hired, initialize that stage as "In Progress"
+        if (status !== 'Failed' && status !== 'Hired' && status !== currentStage) {
+            update.$set[`stages.${status}`] = {
+                status: 'In Progress',
+                reviewer: 'System',
+                notes: 'Stage started',
+                updatedAt: new Date(),
+                completed: false
+            };
+        }
+        
         console.log('Update operation:', update);
         
-        const result = await collection.updateOne(
+        const result = await candidateCollection.updateOne(
             { _id: new ObjectId(params.id) },
             update
         );
@@ -208,6 +253,34 @@ export async function PATCH({ params, request }) {
                     headers: corsHeaders()
                 }
             );
+        }
+        
+        // If candidate is hired, update the position status to "closed"
+        if (status === 'Hired') {
+            try {
+                console.log('Candidate hired, updating position status to closed');
+                const positionCollection = await getCollection('positions');
+                
+                // Find the position by title
+                const position = await positionCollection.findOne({ 
+                    title: candidate.position, 
+                    status: { $ne: 'closed' } // Only update if not already closed
+                });
+                
+                if (position) {
+                    console.log(`Closing position: ${position.title}`);
+                    
+                    await positionCollection.updateOne(
+                        { _id: position._id },
+                        { $set: { status: 'closed' } }
+                    );
+                    
+                    console.log(`Position ${position.title} updated to closed`);
+                }
+            } catch (error) {
+                console.error('Error updating position status:', error);
+                // We still return success for the candidate update even if position update fails
+            }
         }
         
         return json(

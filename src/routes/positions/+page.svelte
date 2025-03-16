@@ -27,10 +27,19 @@
     const stages = ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'];
 
     function getStageCount(position, stage) {
+        if (stage === 'Hired') {
+            // For Hired stage, count candidates where the Hired stage has status "Hired"
+            return data.candidates.filter(c => 
+                c.position === position.title && 
+                c.stages?.Hired?.status === 'Hired'
+            ).length;
+        }
+        
+        // For other stages, use existing logic
         return data.candidates.filter(c => 
             c.position === position.title && 
-            (c.status === stage || // Current stage
-             (c.status === 'Failed' && c.stages?.[stage]?.status === 'Failed')) // Failed at this stage
+            c.stages?.[stage]?.status && 
+            ['In Progress', 'Failed'].includes(c.stages[stage].status)
         ).length;
     }
 
@@ -49,38 +58,6 @@
         if (count === 0) return 'btn-outline-secondary';
         return 'btn-warning';
     }
-
-    async function updatePositionStatus(position) {
-        const hiredCount = getStageCount(position, 'Hired');
-        if (hiredCount >= 1 && position.status.toLowerCase() !== 'closed') {
-            try {
-                if (!position._id) return;
-                
-                const response = await fetch(`/api/positions/${position._id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'closed' })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to update position status');
-                }
-
-                window.location.reload();
-            } catch (error) {
-                console.error('Error updating position:', error);
-            }
-        }
-    }
-
-    // Simplify the status check function
-    function checkPositionStatuses() {
-        data.positions?.forEach(updatePositionStatus);
-    }
-
-    $effect(() => {
-        checkPositionStatuses();
-    });
 
     // Replace console.log with $inspect for state debugging
     $inspect(newPosition);

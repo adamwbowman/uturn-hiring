@@ -29,11 +29,11 @@ async function migrateExistingCandidates(collection) {
                 $set: {
                     stages: {
                         'New': {
-                            status: 'New',
+                            status: 'In Progress',
                             reviewer: 'System',
                             notes: 'Initial status',
                             updatedAt: new Date(),
-                            completed: true
+                            completed: false
                         }
                     }
                 }
@@ -150,11 +150,11 @@ export async function POST({ request }) {
             status: 'New',
             stages: {
                 'New': {
-                    status: 'Passed',
+                    status: 'In Progress',
                     reviewer: 'System',
                     notes: 'Initial status',
                     updatedAt: new Date(),
-                    completed: true
+                    completed: false
                 }
             },
             createdAt: new Date()

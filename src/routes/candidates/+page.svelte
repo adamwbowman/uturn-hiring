@@ -26,10 +26,12 @@
     });
 
     const statusFlow = {
-        'New': { next: 'CV Review', color: 'info' },
-        'CV Review': { next: 'Cultural Fit', color: 'warning' },
-        'Cultural Fit': { next: 'Interview', color: 'warning' },
-        'Interview': { next: 'Hired', color: 'warning' }
+        'New': { next: 'CV Review', color: 'info', display: 'New' },
+        'CV Review': { next: 'Cultural Fit', color: 'warning', display: 'In Progress' },
+        'Cultural Fit': { next: 'Interview', color: 'warning', display: 'In Progress' },
+        'Interview': { next: 'Hired', color: 'warning', display: 'In Progress' },
+        'Hired': { next: null, color: 'success', display: 'Hired' },
+        'Failed': { next: null, color: 'danger', display: 'Failed' }
     };
 
     function toggleForm() {
@@ -63,10 +65,25 @@
     }
 
     async function createCandidate(candidateData) {
+        // Add the initial status and stage data
+        const enhancedData = {
+            ...candidateData,
+            status: 'New',
+            stages: {
+                'New': {
+                    status: 'In Progress',
+                    reviewer: 'System',
+                    notes: 'Initial stage',
+                    updatedAt: new Date(),
+                    completed: false
+                }
+            }
+        };
+        
         const response = await fetch('/api/candidates', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(candidateData)
+            body: JSON.stringify(enhancedData)
         });
         
         if (!response.ok) {
@@ -175,17 +192,41 @@
     function getStatusColor(status) {
         if (status === 'Failed') return 'danger';
         if (status === 'Hired') return 'success';
+        if (status === 'In Progress') return 'warning';
+        
+        // Check if the status maps to a display of "In Progress"
+        const displayStatus = statusFlow[status]?.display;
+        if (displayStatus === 'In Progress') return 'warning';
+        
         return statusFlow[status]?.color || 'secondary';
     }
 
     function openStatusModal(candidate) {
-        selectedCandidate = candidate;
+        selectedCandidate = candidate; // Store the candidate for reference
+        
+        // If the candidate's status is "In Progress", determine the actual stage
+        let actualStatus = candidate.status;
+        if (candidate.status === 'In Progress') {
+            // Find which stage is currently in progress
+            const stages = Object.entries(candidate.stages || {});
+            for (const [stageName, stageData] of stages) {
+                if (stageData.status === 'In Progress') {
+                    actualStatus = stageName;
+                    break;
+                }
+            }
+        }
+        
         statusUpdate = {
-            action: 'pass',
-            status: statusFlow[candidate.status]?.next || candidate.status,
+            candidateId: candidate._id,
+            previousStatus: actualStatus, // Use the actual stage name, not the display status
+            status: actualStatus, // Use the actual stage name, not the display status
+            currentStage: actualStatus, // Track the current stage for the API
             reviewer: '',
-            notes: ''
+            notes: '',
+            action: ''
         };
+        
         showStatusModal = true;
         toggleModal(true);
     }
@@ -205,18 +246,43 @@
             return;
         }
 
-        if (statusUpdate.status === 'Failed' && !statusUpdate.notes) {
+        if (statusUpdate.action === 'fail' && !statusUpdate.notes) {
             alert('Notes are required when failing a candidate');
             return;
         }
         
         try {
-            if (!selectedCandidate?._id) {
+            const candidateId = statusUpdate.candidateId;
+            if (!candidateId) {
                 throw new Error('Invalid candidate ID');
             }
 
-            await updateCandidateStatus(selectedCandidate._id, {
-                status: statusUpdate.status,
+            const currentStage = statusUpdate.currentStage;
+            let newStatus;
+            let stageStatus;
+            
+            // Handle passing a stage
+            if (statusUpdate.action === 'pass') {
+                // Always set the current stage's status to Passed
+                stageStatus = 'Passed';
+                
+                // Get the next stage from statusFlow
+                newStatus = statusFlow[currentStage]?.next || currentStage;
+            }
+            
+            // Handle failing a stage
+            if (statusUpdate.action === 'fail') {
+                // Set the stage status to Failed
+                stageStatus = 'Failed';
+                
+                // Set the candidate status to Failed
+                newStatus = 'Failed';
+            }
+
+            await updateCandidateStatus(candidateId, {
+                status: newStatus,
+                stageStatus: stageStatus,
+                currentStage: currentStage,
                 reviewer: statusUpdate.reviewer,
                 notes: statusUpdate.notes,
                 action: statusUpdate.action
@@ -252,11 +318,24 @@
             if (stageData.status === 'Skipped') return 'btn-secondary';  // Gray for skipped stages
         }
 
-        // For the current active stage, use its color from statusFlow
-        if (candidateStatus === stage) return `btn-${getStatusColor(stage)}`;
+        // For stages that are "In Progress" - make yellow
+        if (stageData?.status === 'In Progress') {
+            return 'btn-warning';
+        }
+
+        // For the current active stage
+        if (candidateStatus === stage) {
+            // Use the color from statusFlow
+            return `btn-${statusFlow[stage]?.color || 'secondary'}`;
+        }
 
         // If candidate is hired, all stages are green
         if (candidateStatus === 'Hired') return 'btn-success';
+
+        // If candidate failed, show the stage they failed at as red
+        if (candidateStatus === 'Failed' && stageData && stageData.status === 'Failed') {
+            return 'btn-danger';
+        }
 
         // Future/incomplete stages are outlined in gray
         return 'btn-outline-secondary';
@@ -382,31 +461,21 @@
             <!-- Table -->
             <div class="table-responsive">
                 <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Name/Email</th>
-                            <th>Position</th>
-                            <th>Stage Map</th>
-                            <th>Source/Contact</th>
-                            <th>Pay</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
                     <tbody>
                         {#each data.candidates as candidate}
                             <tr>
-                                <td>
+                                <td class="align-middle">
                                     <div class="d-flex align-items-center gap-2">
                                         <button 
                                             class="btn btn-sm btn-{getStatusColor(candidate.status)}" 
+                                            style="min-width: 100px; white-space: nowrap;"
                                             disabled
                                         >
-                                            {candidate.status}
+                                            {statusFlow[candidate.status]?.display || candidate.status}
                                         </button>
                                         {#if candidate.status !== 'Failed' && candidate.status !== 'Hired'}
                                             <button 
-                                                class="btn btn-sm btn-{getStatusColor(candidate.status)}"
+                                                class="btn btn-sm btn-outline-{getStatusColor(candidate.status)} btn-status-update"
                                                 onclick={() => openStatusModal(candidate)}
                                                 title="Update status"
                                             >
@@ -418,7 +487,7 @@
                                 <td>
                                     <div>{candidate.name}</div>
                                     <div>
-                                        <a href="mailto:{candidate.email}" class="text-muted small">
+                                        <a href="mailto:{candidate.email}" class="text-muted small text-decoration-none">
                                             {candidate.email}
                                         </a>
                                     </div>
@@ -435,17 +504,29 @@
                                             {@const stageData = candidate.stages?.[stage]}
                                             <button 
                                                 class="btn btn-sm {getStageButtonStyle(stage, candidate.status, stageData)}"
-                                                style="min-width: 120px; font-size: 0.7rem; padding: 0.2rem 0.4rem;"
-                                                title={stageData ? `Stage: ${stage}\nOutcome: ${stageData.status}\nReviewer: ${stageData.reviewer}\nDate: ${formatDate(stageData.updatedAt)}${stageData.notes ? '\nNotes: ' + stageData.notes : ''}` : ''}
+                                                style="min-width: 85px; font-size: 0.75rem; padding: 0.2rem 0.5rem;"
+                                                title={stageData ? `Stage: ${stage}\nStatus: ${stageData.status}\nReviewer: ${stageData.reviewer}\nDate: ${formatDate(stageData.updatedAt)}${stageData.notes ? '\nNotes: ' + stageData.notes : ''}` : ''}
                                                 disabled
                                             >
-                                                <div class="text-start">
+                                                <div class="text-center">
                                                     <div class="fw-bold">{stage}</div>
                                                     {#if stageData}
-                                                        <div class="small opacity-75">
-                                                            <div>{stageData.status}</div>
-                                                            <div>{formatDate(stageData.updatedAt)}</div>
-                                                        </div>
+                                                        {#if stageData.status === 'Passed' || stageData.status === 'Failed' || stageData.status === 'Hired'}
+                                                            {#if stageData.updatedAt}
+                                                                <div class="small text-white">
+                                                                    {formatDate(stageData.updatedAt)}
+                                                                </div>
+                                                            {/if}
+                                                        {:else}
+                                                            <div class="small">
+                                                                {stageData.status}
+                                                            </div>
+                                                            {#if stageData.status !== 'In Progress' && stageData.updatedAt}
+                                                                <div class="small text-muted" style="font-size: 0.65rem;">
+                                                                    {formatDate(stageData.updatedAt)}
+                                                                </div>
+                                                            {/if}
+                                                        {/if}
                                                     {/if}
                                                 </div>
                                             </button>
@@ -464,10 +545,10 @@
                                         {getPayType(candidate.requestedPay)}
                                     </div>
                                 </td>
-                                <td>
+                                <td class="align-middle">
                                     <div class="btn-group">
                                         <button 
-                                            class="btn btn-sm btn-danger" 
+                                            class="btn btn-sm btn-outline-danger" 
                                             onclick={() => confirmDelete(candidate)}
                                             title="Delete candidate"
                                         >
@@ -490,20 +571,20 @@
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">
-                            Update Candidate Status
+                            Update Hiring Process
                         </h5>
                         <button type="button" class="btn-close" onclick={closeStatusModal}></button>
                     </div>
                     <form onsubmit={handleStatusUpdate}>
                         <div class="modal-body">
-                            <!-- Stage Map -->
+                            <!-- Hiring Process -->
                             <div class="mb-4">
                                 <div class="d-flex gap-1 flex-nowrap justify-content-center">
                                     {#each ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'] as stage}
                                         {@const stageData = selectedCandidate?.stages?.[stage]}
                                         <button 
                                             class="btn btn-sm {getStageButtonStyle(stage, selectedCandidate?.status, stageData)}"
-                                            style="text-align: center; padding: 0.25rem 0.75rem; {stage === 'New' || stage === 'Hired' ? 'width: 65px;' : ''}"
+                                            style="text-align: center; min-width: 85px; padding: 0.25rem 0.5rem;"
                                             disabled
                                         >
                                             {stage}
@@ -537,28 +618,24 @@
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" onclick={closeStatusModal}>
-                                Cancel
+                            <button type="button" class="btn btn-secondary" onclick={closeStatusModal}>Cancel</button>
+                            <button 
+                                type="submit" 
+                                class="btn btn-danger me-2" 
+                                onclick={() => statusUpdate.action = 'fail'}
+                            >
+                                Fail Candidate
                             </button>
                             <button 
                                 type="submit" 
-                                class="btn btn-danger me-2"
-                                onclick={() => {
-                                    statusUpdate.action = 'fail';
-                                    statusUpdate.status = 'Failed';
-                                }}
+                                class="btn btn-success" 
+                                onclick={() => statusUpdate.action = 'pass'}
                             >
-                                Fail
-                            </button>
-                            <button 
-                                type="submit" 
-                                class="btn btn-success"
-                                onclick={() => {
-                                    statusUpdate.action = 'pass';
-                                    statusUpdate.status = statusFlow[selectedCandidate.status]?.next || selectedCandidate.status;
-                                }}
-                            >
-                                Pass
+                                {#if statusUpdate.currentStage === 'Interview'}
+                                    Hire Candidate
+                                {:else}
+                                    Pass to Next Stage
+                                {/if}
                             </button>
                         </div>
                     </form>
@@ -616,5 +693,19 @@
 
     .w-100px {
         width: 100px;
+    }
+    
+    /* Add hover styles for progress and delete buttons */
+    :global(.btn-status-update:hover) {
+        opacity: 1 !important;
+        background-color: var(--bs-btn-hover-bg, var(--bs-primary)) !important;
+        color: white !important;
+        border-color: var(--bs-btn-hover-border-color, var(--bs-primary)) !important;
+        box-shadow: 0 0 0 0.25rem rgba(var(--bs-btn-hover-bg-rgb, 49, 132, 253), 0.25);
+    }
+    
+    :global(.btn-outline-danger:hover) {
+        background-color: var(--bs-danger);
+        color: white;
     }
 </style> 
