@@ -24,6 +24,64 @@
     
     const timelines = ['Q1', 'Q2', 'Q3', 'Q4'];
     
+    const stages = ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'];
+
+    function getStageCount(position, stage) {
+        return data.candidates.filter(c => 
+            c.position === position.title && 
+            (c.status === stage || // Current stage
+             (c.status === 'Failed' && c.stages?.[stage]?.status === 'Failed')) // Failed at this stage
+        ).length;
+    }
+
+    function getStageButtonStyle(count, stage, position) {
+        const hiredCount = getStageCount(position, 'Hired');
+        
+        // If there's one or more hires, all other stages should be gray
+        if (hiredCount >= 1 && stage !== 'Hired') {
+            return 'btn-outline-secondary';
+        }
+        
+        // Show success for hired candidates
+        if (stage === 'Hired' && count > 0) return 'btn-success';
+        
+        // Default states
+        if (count === 0) return 'btn-outline-secondary';
+        return 'btn-warning';
+    }
+
+    async function updatePositionStatus(position) {
+        const hiredCount = getStageCount(position, 'Hired');
+        if (hiredCount >= 1 && position.status.toLowerCase() !== 'closed') {
+            try {
+                if (!position._id) return;
+                
+                const response = await fetch(`/api/positions/${position._id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'closed' })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update position status');
+                }
+
+                window.location.reload();
+            } catch (error) {
+                console.error('Error updating position:', error);
+            }
+        }
+    }
+
+    // Simplify the status check function
+    function checkPositionStatuses() {
+        data.positions?.forEach(updatePositionStatus);
+    }
+
+    $effect(() => {
+        checkPositionStatuses();
+    });
+
     // Replace console.log with $inspect for state debugging
     $inspect(newPosition);
 
@@ -195,6 +253,7 @@
                             <th>Department</th>
                             <th>Title</th>
                             <th>Hiring Manager</th>
+                            <th>Stage Map</th>
                             <th>Timeline</th>
                             <th>Actions</th>
                         </tr>
@@ -203,8 +262,8 @@
                         {#each data.positions as position}
                             <tr>
                                 <td>
-                                    <button class="btn btn-sm {position.status === 'Open' ? 'btn-success' : 'btn-secondary'}" disabled>
-                                        {position.status}
+                                    <button class="btn btn-sm {position.status.toLowerCase() === 'open' ? 'btn-success' : 'btn-secondary'}" disabled>
+                                        {position.status.toLowerCase() === 'open' ? 'Open' : 'Closed'}
                                     </button>
                                 </td>
                                 <td>
@@ -214,6 +273,21 @@
                                 </td>
                                 <td>{position.title}</td>
                                 <td>{position.hiringManager}</td>
+                                <td>
+                                    <div class="d-flex gap-1 flex-nowrap">
+                                        {#each stages as stage}
+                                            {@const count = getStageCount(position, stage)}
+                                            <button 
+                                                class="btn btn-sm {getStageButtonStyle(count, stage, position)}"
+                                                style="text-align: center; padding: 0.25rem 0.75rem; {stage === 'New' || stage === 'Hired' ? 'width: 65px;' : ''}"
+                                                disabled
+                                            >
+                                                <div class="fw-bold">{stage}</div>
+                                                <div class="small">{count}</div>
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-secondary" disabled>
                                         {position.timeline}

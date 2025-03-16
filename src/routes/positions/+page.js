@@ -1,12 +1,22 @@
 export async function load({ fetch }) {
     try {
-        const response = await fetch('/api/positions');
-        const positions = await response.json();
-        return { positions };
+        const [positionsResponse, candidatesResponse] = await Promise.all([
+            fetch('/api/positions'),
+            fetch('/api/candidates')
+        ]);
+        
+        const positions = await positionsResponse.json();
+        const candidates = await candidatesResponse.json();
+        
+        return { 
+            positions,
+            candidates 
+        };
     } catch (error) {
         return {
             positions: [],
-            error: 'Failed to load positions'
+            candidates: [],
+            error: 'Failed to load data'
         };
     }
 } 

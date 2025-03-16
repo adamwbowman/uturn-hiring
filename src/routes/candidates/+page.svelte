@@ -213,6 +213,18 @@
                 action: statusUpdate.action
             });
             
+            // If the candidate is hired, update the position status to closed
+            if (statusUpdate.status === 'Hired') {
+                const position = data.openPositions.find(p => p.title === selectedCandidate.position);
+                if (position?._id) {
+                    await fetch(`/api/positions/${position._id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'closed' })
+                    });
+                }
+            }
+            
             closeStatusModal();
             window.location.reload();
         } catch (error) {
