@@ -8,9 +8,9 @@
     <div class="container-fluid d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center">
             <a class="navbar-brand" href="/" data-sveltekit-preload-data="hover">Svelte5kit + Bootstrap</a>
-            {@render navMainBtn('Positions', '/positions', 'bi bi-briefcase')}
+            {@render navMainBtn('Positions', '/positions', 'bi bi-list-ul')}
             {@render navMainBtn('Page', '/page', 'bi bi-plus-circle-dotted')}
-            {@render navMainBtn('Mongo', '/mongo-test', 'bi bi-database')}
+            {@render navMainBtn('Tests', '/tests', 'bi bi-clipboard-check')}
         </div>
         <div class="btn-group">
             <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
