@@ -37,11 +37,7 @@
 
     // Watch for changes in filters and data
     $effect(() => {
-        console.log('Effect running - Current data:', data);
-        console.log('Current filters - Stage:', selectedStage, 'Status:', selectedStatus, 'Department:', selectedDepartment, 'Source:', selectedSource);
-        
         if (!Array.isArray(data.candidates)) {
-            console.warn('data.candidates is not an array:', data.candidates);
             filteredCandidates = [];
             return;
         }
@@ -60,24 +56,16 @@
             
             const matchesSource = selectedSource === 'All' || candidate.source === selectedSource;
             
-            console.log(`Candidate ${candidate.name}: matches stage: ${matchesStage}, matches status: ${matchesStatus}, matches department: ${matchesDepartment}, matches source: ${matchesSource}`);
             return matchesStage && matchesStatus && matchesDepartment && matchesSource;
         });
-        
-        console.log('Updated filtered candidates:', filteredCandidates);
     });
 
     onMount(async () => {
         try {
-            console.log('Fetching candidates and positions...');
-            
             const [candidatesResponse, positionsResponse] = await Promise.all([
                 fetch('/api/candidates'),
                 fetch('/api/positions')
             ]);
-            
-            console.log('Candidates response status:', candidatesResponse.status);
-            console.log('Positions response status:', positionsResponse.status);
             
             if (!candidatesResponse.ok) {
                 const errorData = await candidatesResponse.json();
@@ -91,9 +79,6 @@
             const candidates = await candidatesResponse.json();
             const positions = await positionsResponse.json();
             
-            console.log('Loaded candidates:', candidates);
-            console.log('Loaded positions:', positions);
-            
             if (!Array.isArray(candidates)) {
                 throw new Error('Candidates data is not in the expected format');
             }
@@ -104,7 +89,6 @@
             filteredCandidates = candidates; // Initialize with all candidates
             
         } catch (e) {
-            console.error('Error loading data:', e);
             error = e.message;
             
             if (e instanceof TypeError && e.message.includes('fetch')) {
@@ -194,42 +178,47 @@
         return response.json();
     }
 
-    async function updateCandidateStatus(candidateId, updateData) {
+    async function updateCandidateStatus(candidate, newStatus) {
         try {
-            const response = await fetch(`/api/candidates/${candidateId}`, {
+            const response = await fetch(`/api/candidates/${candidate._id}`, {
                 method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                headers: {
+                    'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(updateData)
+                body: JSON.stringify({
+                    status: newStatus,
+                    reviewer: 'Admin', // TODO: Get actual user
+                    notes: 'Status updated' // TODO: Add notes input
+                })
             });
-            
+
             if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || errorData.details || 'Failed to update candidate status');
+                throw new Error('Failed to update candidate status');
             }
 
-            return await response.json();
+            // Refresh the page to show updated data
+            window.location.reload();
         } catch (error) {
-            console.error('Update error:', error);
-            throw error;
+            error = error.message;
         }
     }
 
     async function deleteCandidate(candidate) {
+        if (!confirm(`Are you sure you want to delete ${candidate.name}?`)) return;
+        
         try {
             const response = await fetch(`/api/candidates/${candidate._id}`, {
                 method: 'DELETE'
             });
             
-            if (response.ok) {
-                window.location.reload();
-            } else {
+            if (!response.ok) {
                 throw new Error('Failed to delete candidate');
             }
+            
+            // Refresh the page to show updated data
+            window.location.reload();
         } catch (error) {
-            alert('Error deleting candidate: ' + error.message);
+            error = error.message;
         }
     }
 
@@ -316,7 +305,10 @@
     async function handleStatusUpdate(event) {
         event.preventDefault();
         
-        if (!statusUpdate.reviewer) {
+        // Trim the reviewer name to handle whitespace
+        statusUpdate.reviewer = statusUpdate.reviewer.trim();
+        
+        if (!statusUpdate.reviewer || statusUpdate.reviewer.length === 0) {
             alert('Reviewer name is required');
             return;
         }
@@ -333,40 +325,88 @@
             }
 
             const currentStage = statusUpdate.currentStage;
+            if (!currentStage) {
+                throw new Error('Current stage is required');
+            }
+
             let newStatus;
-            let stageStatus;
+            let stageData = {
+                stages: {},
+                currentStage: currentStage
+            };
             
             // Handle passing a stage
             if (statusUpdate.action === 'pass') {
-                // Always set the current stage's status to Passed
-                stageStatus = 'Passed';
-                
                 // Get the next stage from statusFlow
-                newStatus = statusFlow[currentStage]?.next || currentStage;
+                newStatus = statusFlow[currentStage]?.next;
+                if (!newStatus && currentStage !== 'Interview') {
+                    throw new Error('Invalid stage progression');
+                }
+                
+                // If this is the final interview stage, set status to Hired
+                if (currentStage === 'Interview') {
+                    newStatus = 'Hired';
+                }
+                
+                // Update the current stage as completed
+                stageData.stages[currentStage] = {
+                    status: 'Passed',
+                    reviewer: statusUpdate.reviewer,
+                    notes: statusUpdate.notes || 'Passed to next stage',
+                    updatedAt: new Date().toISOString(),
+                    completed: true
+                };
+
+                // If there is a next stage, initialize it
+                if (newStatus && newStatus !== 'Hired') {
+                    stageData.stages[newStatus] = {
+                        status: 'In Progress',
+                        reviewer: statusUpdate.reviewer,
+                        notes: 'Stage started',
+                        updatedAt: new Date().toISOString(),
+                        completed: false
+                    };
+                }
             }
             
             // Handle failing a stage
             if (statusUpdate.action === 'fail') {
-                // Set the stage status to Failed
-                stageStatus = 'Failed';
-                
-                // Set the candidate status to Failed
                 newStatus = 'Failed';
+                stageData.stages[currentStage] = {
+                    status: 'Failed',
+                    reviewer: statusUpdate.reviewer,
+                    notes: statusUpdate.notes,
+                    updatedAt: new Date().toISOString(),
+                    completed: true
+                };
             }
 
-            await updateCandidateStatus(candidateId, {
-                status: newStatus,
-                stageStatus: stageStatus,
-                currentStage: currentStage,
-                reviewer: statusUpdate.reviewer,
-                notes: statusUpdate.notes,
-                action: statusUpdate.action
+            const response = await fetch(`/api/candidates/${candidateId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    status: newStatus,
+                    currentStage,
+                    reviewer: statusUpdate.reviewer,
+                    notes: statusUpdate.notes,
+                    action: statusUpdate.action,
+                    stageStatus: statusUpdate.action === 'pass' ? 'Passed' : 'Failed',
+                    stages: stageData.stages
+                })
             });
-            
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to update candidate status');
+            }
+
+            // Close the modal and refresh the page
             closeStatusModal();
             window.location.reload();
+            
         } catch (error) {
-            console.error('Error details:', error);
             alert('Error updating candidate status: ' + error.message);
         }
     }
@@ -444,7 +484,7 @@
                 <div class="btn-group" role="group" aria-label="Status filter">
                     {#each statuses as status}
                         {@const isActive = selectedStatus === status}
-                        {@const icon = status === 'All' ? 'bi-filter'
+                        {@const icon = status === 'All' ? 'bi-three-dots'
                             : status === 'New' ? 'bi-star'
                             : status === 'In Progress' ? 'bi-arrow-repeat'
                             : status === 'Hired' ? 'bi-check-circle'
@@ -679,6 +719,7 @@
                                                     class="btn btn-sm btn-outline-{getStatusColor(candidate.status)} btn-status-update"
                                                     onclick={() => openStatusModal(candidate)}
                                                     title="Update status"
+                                                    aria-label="Update status"
                                                 >
                                                     <i class="bi bi-fast-forward-fill"></i>
                                                 </button>
@@ -774,7 +815,7 @@
                             <h5 class="modal-title">
                                 Update Hiring Process
                             </h5>
-                            <button type="button" class="btn-close" onclick={closeStatusModal}></button>
+                            <button type="button" class="btn-close" aria-label="Close" onclick={closeStatusModal}></button>
                         </div>
                         <form onsubmit={handleStatusUpdate}>
                             <div class="modal-body">
@@ -795,10 +836,10 @@
                                 </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label">Candidate: {selectedCandidate?.name}</label>
+                                    <label class="form-label" for="candidate-name">Candidate: {selectedCandidate?.name}</label>
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label">Your Name *</label>
+                                    <label class="form-label" for="reviewer-name">Your Name *</label>
                                     <input 
                                         type="text" 
                                         class="form-control" 
@@ -807,11 +848,12 @@
                                     >
                                 </div>
                                 <div class="mb-3">
-                                    <label class="form-label">
+                                    <label class="form-label" for="status-notes">
                                         Notes {statusUpdate.action === 'fail' ? '*' : '(optional)'}
                                     </label>
                                     <textarea 
-                                        class="form-control" 
+                                        class="form-control"
+                                        id="status-notes"
                                         bind:value={statusUpdate.notes}
                                         required={statusUpdate.action === 'fail'}
                                         rows="3"

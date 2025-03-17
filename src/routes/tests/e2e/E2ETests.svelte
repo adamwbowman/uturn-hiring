@@ -3,6 +3,25 @@
     let message = $state('');
     let results = $state([]);
     
+    // Helper function for making PATCH requests
+    async function makePatchRequest(url, data) {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`PATCH request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        return response;
+    }
+
     const tests = [
         {
             name: 'Complete Position Management Workflow',
@@ -546,25 +565,52 @@
                 let currentStage = 'New';
                 
                 for (const stage of stages) {
-                    const updateResponse = await fetch(`/api/candidates/${candidateToHire}`, {
-                        method: 'PATCH',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            status: stage,
-                            currentStage: currentStage,
-                            stageStatus: 'Passed',
-                            reviewer: 'E2E Tester',
-                            notes: `Passed ${currentStage}`,
-                            action: 'pass'
-                        })
+                    // Update candidate to next stage
+                    const updateResponse = await makePatchRequest(`/api/candidates/${candidateToHire}`, {
+                        status: stage,
+                        currentStage: currentStage,
+                        stageStatus: 'Passed',
+                        reviewer: 'E2E Tester',
+                        notes: `Passed ${currentStage}`,
+                        action: 'pass'
                     });
                     
-                    if (!updateResponse.ok) {
-                        const errorText = await updateResponse.text();
-                        throw new Error(`Failed to update candidate to ${stage}: ${errorText}`);
+                    // Verify the update
+                    const verifyResponse = await fetch(`/api/candidates/${candidateToHire}`);
+                    if (!verifyResponse.ok) throw new Error(`Failed to verify candidate after ${stage} update`);
+                    const verifyCandidate = await verifyResponse.json();
+                    
+                    // Verify previous stage is marked as passed
+                    if (verifyCandidate.stages?.[currentStage]?.status !== 'Passed') {
+                        throw new Error(`${currentStage} stage should be Passed but was ${verifyCandidate.stages?.[currentStage]?.status}`);
+                    }
+                    
+                    // Verify the stage is marked as completed
+                    if (!verifyCandidate.stages?.[currentStage]?.completed) {
+                        throw new Error(`${currentStage} stage should be marked as completed`);
+                    }
+                    
+                    // For stages before Hired, verify the new stage is In Progress
+                    if (stage !== 'Hired') {
+                        if (verifyCandidate.stages?.[stage]?.status !== 'In Progress') {
+                            throw new Error(`${stage} stage should be In Progress but was ${verifyCandidate.stages?.[stage]?.status}`);
+                        }
+                        
+                        // Verify the new stage is not marked as completed
+                        if (verifyCandidate.stages?.[stage]?.completed) {
+                            throw new Error(`${stage} stage should not be marked as completed yet`);
+                        }
+                        
+                        // Verify overall status based on the stage
+                        const expectedStatus = ['CV Review', 'Cultural Fit', 'Interview'].includes(stage) ? 'In Progress' : stage;
+                        if (verifyCandidate.status !== expectedStatus) {
+                            throw new Error(`Overall status should be ${expectedStatus} but was ${verifyCandidate.status}`);
+                        }
+                    } else {
+                        // For Hired stage, verify the status is "Hired"
+                        if (verifyCandidate.status !== 'Hired') {
+                            throw new Error(`Overall status should be Hired but was ${verifyCandidate.status}`);
+                        }
                     }
                     
                     currentStage = stage;
@@ -575,25 +621,46 @@
                 currentStage = 'New';
                 
                 for (const stage of stages.slice(0, 3)) { // CV Review, Cultural Fit, Interview
-                    const updateResponse = await fetch(`/api/candidates/${candidateToInterview}`, {
-                        method: 'PATCH',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            status: stage,
-                            currentStage: currentStage,
-                            stageStatus: 'Passed',
-                            reviewer: 'E2E Tester',
-                            notes: `Passed ${currentStage}`,
-                            action: 'pass'
-                        })
+                    const updateResponse = await makePatchRequest(`/api/candidates/${candidateToInterview}`, {
+                        status: stage,
+                        currentStage: currentStage,
+                        stageStatus: 'Passed',
+                        reviewer: 'E2E Tester',
+                        notes: `Passed ${currentStage}`,
+                        action: 'pass'
                     });
                     
-                    if (!updateResponse.ok) {
-                        const errorText = await updateResponse.text();
-                        throw new Error(`Failed to update second candidate to ${stage}: ${errorText}`);
+                    // Verify the update
+                    const verifyResponse = await fetch(`/api/candidates/${candidateToInterview}`);
+                    if (!verifyResponse.ok) throw new Error(`Failed to verify candidate after ${stage} update`);
+                    const verifyCandidate = await verifyResponse.json();
+                    
+                    // Verify previous stage is marked as passed
+                    if (verifyCandidate.stages?.[currentStage]?.status !== 'Passed') {
+                        throw new Error(`${currentStage} stage should be Passed but was ${verifyCandidate.stages?.[currentStage]?.status}`);
+                    }
+                    
+                    // Verify the stage is marked as completed
+                    if (!verifyCandidate.stages?.[currentStage]?.completed) {
+                        throw new Error(`${currentStage} stage should be marked as completed`);
+                    }
+                    
+                    // For stages before Hired, verify the new stage is In Progress
+                    if (stage !== 'Hired') {
+                        if (verifyCandidate.stages?.[stage]?.status !== 'In Progress') {
+                            throw new Error(`${stage} stage should be In Progress but was ${verifyCandidate.stages?.[stage]?.status}`);
+                        }
+                        
+                        // Verify the new stage is not marked as completed
+                        if (verifyCandidate.stages?.[stage]?.completed) {
+                            throw new Error(`${stage} stage should not be marked as completed yet`);
+                        }
+                        
+                        // Verify overall status based on the stage
+                        const expectedStatus = ['CV Review', 'Cultural Fit', 'Interview'].includes(stage) ? 'In Progress' : stage;
+                        if (verifyCandidate.status !== expectedStatus) {
+                            throw new Error(`Overall status should be ${expectedStatus} but was ${verifyCandidate.status}`);
+                        }
                     }
                     
                     currentStage = stage;
@@ -601,20 +668,13 @@
                 
                 // 5. Fail the third candidate at CV Review
                 const candidateToFail = candidateIds[2];
-                const failUpdateResponse = await fetch(`/api/candidates/${candidateToFail}`, {
-                    method: 'PATCH',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        status: 'Failed',
-                        currentStage: 'New',
-                        stageStatus: 'Failed',
-                        reviewer: 'E2E Tester',
-                        notes: 'Not a good fit',
-                        action: 'fail'
-                    })
+                const failUpdateResponse = await makePatchRequest(`/api/candidates/${candidateToFail}`, {
+                    status: 'Failed',
+                    currentStage: 'New',
+                    stageStatus: 'Failed',
+                    reviewer: 'E2E Tester',
+                    notes: 'Not a good fit',
+                    action: 'fail'
                 });
                 
                 if (!failUpdateResponse.ok) {

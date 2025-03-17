@@ -3,6 +3,25 @@
     let message = $state('');
     let results = $state([]);
     
+    // Helper function for making PATCH requests
+    async function makePatchRequest(url, data) {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`PATCH request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        return response;
+    }
+
     const tests = [
         {
             name: 'Complete Position Lifecycle',
@@ -400,20 +419,13 @@
                 
                 for (const stage of stages) {
                     // Update candidate to next stage
-                    const updateResponse = await fetch(`/api/candidates/${candidateId}`, {
-                        method: 'PATCH',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            status: stage,
-                            currentStage: currentStage,
-                            stageStatus: 'Passed',
-                            reviewer: 'Integration Tester',
-                            notes: `Passed ${currentStage}`,
-                            action: 'pass'
-                        })
+                    const updateResponse = await makePatchRequest(`/api/candidates/${candidateId}`, {
+                        status: stage,
+                        currentStage: currentStage,
+                        stageStatus: 'Passed',
+                        reviewer: 'Integration Tester',
+                        notes: `Passed ${currentStage}`,
+                        action: 'pass'
                     });
                     
                     if (!updateResponse.ok) {
@@ -431,19 +443,35 @@
                         throw new Error(`${currentStage} stage should be Passed but was ${updatedCandidate.stages?.[currentStage]?.status}`);
                     }
                     
+                    // Verify the stage is marked as completed
+                    if (!updatedCandidate.stages?.[currentStage]?.completed) {
+                        throw new Error(`${currentStage} stage should be marked as completed`);
+                    }
+                    
                     // For stages before Hired, verify the new stage is In Progress
                     if (stage !== 'Hired') {
                         if (updatedCandidate.stages?.[stage]?.status !== 'In Progress') {
                             throw new Error(`${stage} stage should be In Progress but was ${updatedCandidate.stages?.[stage]?.status}`);
                         }
+                        
+                        // Verify the new stage is not marked as completed
+                        if (updatedCandidate.stages?.[stage]?.completed) {
+                            throw new Error(`${stage} stage should not be marked as completed yet`);
+                        }
+                        
+                        // Verify overall status based on the stage
+                        const expectedStatus = ['CV Review', 'Cultural Fit', 'Interview'].includes(stage) ? 'In Progress' : stage;
+                        if (updatedCandidate.status !== expectedStatus) {
+                            throw new Error(`Overall status should be ${expectedStatus} but was ${updatedCandidate.status}`);
+                        }
                     } else {
-                        // For Hired stage, verify it's actually Hired
-                        if (updatedCandidate.stages?.Hired?.status !== 'Hired') {
-                            throw new Error(`Hired stage should be Hired but was ${updatedCandidate.stages?.Hired?.status}`);
+                        // For Hired stage, verify the status is "Hired"
+                        if (updatedCandidate.status !== 'Hired') {
+                            throw new Error(`Overall status should be Hired but was ${updatedCandidate.status}`);
                         }
                     }
                     
-                    // Update current stage for next iteration
+                    // Update currentStage for next iteration
                     currentStage = stage;
                     
                     // If we just hired the candidate, verify the position was closed

@@ -1,4 +1,23 @@
 <script>
+    // Helper function for making PATCH requests
+    async function makePatchRequest(url, data) {
+        const response = await fetch(url, {
+            method: 'PATCH',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`PATCH request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        return response;
+    }
+
     let status = $state(null);
     let message = $state('');
     let results = $state([]);
@@ -320,12 +339,7 @@
                 if (!createResponse.ok) throw new Error('Failed to create candidate');
                 const { id } = await createResponse.json();
                 
-                // Get the created candidate
-                const getResponse = await fetch(`/api/candidates/${id}`);
-                if (!getResponse.ok) throw new Error('Failed to get candidate');
-                const createdCandidate = await getResponse.json();
-                
-                // Update the candidate from New to CV Review
+                // Update from New to CV Review
                 const updateData = {
                     status: 'CV Review',
                     currentStage: 'New',
@@ -335,18 +349,11 @@
                     action: 'pass'
                 };
                 
-                const updateResponse = await fetch(`/api/candidates/${id}`, {
-                    method: 'PATCH',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify(updateData)
-                });
-                
-                if (!updateResponse.ok) {
-                    const errorText = await updateResponse.text();
-                    throw new Error(`Failed to update candidate: ${errorText}`);
+                try {
+                    const updateResponse = await makePatchRequest(`/api/candidates/${id}`, updateData);
+                    if (!updateResponse.ok) throw new Error('Failed to update candidate');
+                } catch (error) {
+                    throw new Error(`Failed to update candidate: ${error.message}`);
                 }
                 
                 // Get the updated candidate

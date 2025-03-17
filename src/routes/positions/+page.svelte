@@ -37,11 +37,7 @@
 
     // Watch for changes in filters and data
     $effect(() => {
-        console.log('Effect running - Current data:', data);
-        console.log('Current filters - Department:', selectedDepartment, 'Status:', selectedStatus, 'Timeline:', selectedTimeline);
-        
         if (!Array.isArray(data.positions)) {
-            console.warn('data.positions is not an array:', data.positions);
             filteredPositions = [];
             return;
         }
@@ -50,24 +46,16 @@
             const matchesDepartment = selectedDepartment === 'All' || position.department === selectedDepartment;
             const matchesStatus = selectedStatus === 'All' || position.status?.toLowerCase() === selectedStatus.toLowerCase();
             const matchesTimeline = selectedTimeline === 'All' || position.timeline === selectedTimeline;
-            console.log(`Position ${position.title}: matches department: ${matchesDepartment}, matches status: ${matchesStatus}, matches timeline: ${matchesTimeline}`);
             return matchesDepartment && matchesStatus && matchesTimeline;
         });
-        
-        console.log('Updated filtered positions:', filteredPositions);
     });
 
     onMount(async () => {
         try {
-            console.log('Fetching positions and candidates...');
-            
             const [positionsResponse, candidatesResponse] = await Promise.all([
                 fetch('/api/positions'),
                 fetch('/api/candidates')
             ]);
-            
-            console.log('Position response status:', positionsResponse.status);
-            console.log('Candidates response status:', candidatesResponse.status);
             
             if (!positionsResponse.ok) {
                 const errorData = await positionsResponse.json();
@@ -81,9 +69,6 @@
             const positions = await positionsResponse.json();
             const candidates = await candidatesResponse.json();
             
-            console.log('Loaded positions:', positions);
-            console.log('Loaded candidates:', candidates);
-            
             if (!Array.isArray(positions)) {
                 throw new Error('Positions data is not in the expected format');
             }
@@ -94,7 +79,6 @@
             filteredPositions = positions; // Initialize with all positions
             
         } catch (e) {
-            console.error('Error loading data:', e);
             error = e.message;
             
             if (e instanceof TypeError && e.message.includes('fetch')) {
@@ -313,7 +297,7 @@
             <div class="card-body">
                 <!-- Form -->
                 {#if showForm}
-                    <form id="positionForm" onsubmit={handleSubmit} class="mb-4">
+                    <form id="positionForm" onsubmit={handleSubmit} class="mb-4" transition:slide>
                         <div class="row g-3">
                             <div class="col">
                                 <label for="department" class="form-label">Department</label>

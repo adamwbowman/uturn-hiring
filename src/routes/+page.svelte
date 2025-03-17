@@ -32,7 +32,6 @@
             }, 0);
         } catch (e) {
             error = e.message;
-            console.error('Dashboard error:', e);
         } finally {
             loading = false;
         }
