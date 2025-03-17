@@ -1,7 +1,14 @@
 <script>
-    let { data } = $props();
+    import { onMount } from 'svelte';
+    import { slide } from 'svelte/transition';
+    
+    let data = $state({
+        positions: [],
+        candidates: []
+    });
     
     let showForm = $state(false);
+    let showFilters = $state(false);
     let newPosition = $state({
         title: '',
         department: 'Engineering',
@@ -9,15 +16,96 @@
         timeline: 'Q1'
     });
     
+    // Filter states
+    let selectedDepartment = $state('All');
+    let selectedStatus = $state('All');
+    let selectedTimeline = $state('All');
+    let loading = $state(true);
+    let error = $state(null);
+    let filteredPositions = $state([]);
+    
     const departments = [
+        'All',
         'Engineering',
         'Sales',
         'Management'
     ];
     
-    const timelines = ['Q1', 'Q2', 'Q3', 'Q4'];
-    
+    const timelines = ['All', 'Q1', 'Q2', 'Q3', 'Q4'];
     const stages = ['New', 'CV Review', 'Cultural Fit', 'Interview', 'Hired'];
+    const statuses = ['All', 'Open', 'Closed'];
+
+    // Watch for changes in filters and data
+    $effect(() => {
+        console.log('Effect running - Current data:', data);
+        console.log('Current filters - Department:', selectedDepartment, 'Status:', selectedStatus, 'Timeline:', selectedTimeline);
+        
+        if (!Array.isArray(data.positions)) {
+            console.warn('data.positions is not an array:', data.positions);
+            filteredPositions = [];
+            return;
+        }
+        
+        filteredPositions = data.positions.filter(position => {
+            const matchesDepartment = selectedDepartment === 'All' || position.department === selectedDepartment;
+            const matchesStatus = selectedStatus === 'All' || position.status?.toLowerCase() === selectedStatus.toLowerCase();
+            const matchesTimeline = selectedTimeline === 'All' || position.timeline === selectedTimeline;
+            console.log(`Position ${position.title}: matches department: ${matchesDepartment}, matches status: ${matchesStatus}, matches timeline: ${matchesTimeline}`);
+            return matchesDepartment && matchesStatus && matchesTimeline;
+        });
+        
+        console.log('Updated filtered positions:', filteredPositions);
+    });
+
+    onMount(async () => {
+        try {
+            console.log('Fetching positions and candidates...');
+            
+            const [positionsResponse, candidatesResponse] = await Promise.all([
+                fetch('/api/positions'),
+                fetch('/api/candidates')
+            ]);
+            
+            console.log('Position response status:', positionsResponse.status);
+            console.log('Candidates response status:', candidatesResponse.status);
+            
+            if (!positionsResponse.ok) {
+                const errorData = await positionsResponse.json();
+                throw new Error(`Failed to fetch positions: ${errorData.error || positionsResponse.statusText}`);
+            }
+            if (!candidatesResponse.ok) {
+                const errorData = await candidatesResponse.json();
+                throw new Error(`Failed to fetch candidates: ${errorData.error || candidatesResponse.statusText}`);
+            }
+            
+            const positions = await positionsResponse.json();
+            const candidates = await candidatesResponse.json();
+            
+            console.log('Loaded positions:', positions);
+            console.log('Loaded candidates:', candidates);
+            
+            if (!Array.isArray(positions)) {
+                throw new Error('Positions data is not in the expected format');
+            }
+            
+            // Update state
+            data.positions = positions;
+            data.candidates = candidates;
+            filteredPositions = positions; // Initialize with all positions
+            
+        } catch (e) {
+            console.error('Error loading data:', e);
+            error = e.message;
+            
+            if (e instanceof TypeError && e.message.includes('fetch')) {
+                error = 'Could not connect to the server. Please check if the server is running.';
+            } else if (e.message.includes('Unexpected token')) {
+                error = 'Server returned invalid data format';
+            }
+        } finally {
+            loading = false;
+        }
+    });
 
     function getStageCount(position, stage) {
         if (stage === 'Hired') {
@@ -120,145 +208,248 @@
 </script>
 
 <div class="container mt-4">
-    <!-- Add Position Button -->
-    <div class="d-flex justify-content-end mb-3">
-        <button 
-            type="button" 
-            class="btn btn-primary" 
-            onclick={() => showForm = true}
-            disabled={showForm}
-        >
-            <i class="bi bi-plus"></i> Add Position
-        </button>
-    </div>
+    <!-- Header with Filters and Add Button -->
+    <div class="d-flex flex-column gap-2 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <!-- Status Filter -->
+            <div class="d-flex gap-3">
+                <button 
+                    type="button" 
+                    class="btn btn-outline-secondary"
+                    onclick={() => showFilters = !showFilters}
+                    class:active={showFilters}
+                >
+                    Filters
+                    <i class="bi bi-chevron-down ms-1"></i>
+                </button>
 
-    <!-- Combined Card for Form and Table -->
-    <div class="card">
-        <div class="card-body">
-            <!-- Form -->
-            {#if showForm}
-                <form id="positionForm" onsubmit={handleSubmit} class="mb-4">
-                    <div class="row g-3">
-                        <div class="col">
-                            <label for="department" class="form-label">Department</label>
-                            <select 
-                                class="form-select" 
-                                id="department"
-                                bind:value={newPosition.department}
-                                required
-                            >
-                                {#each departments as dept}
-                                    <option value={dept}>{dept}</option>
-                                {/each}
-                            </select>
-                        </div>
+                <div class="btn-group" role="group" aria-label="Status filter">
+                    {#each statuses as status}
+                        <button 
+                            type="button" 
+                            class="btn {selectedStatus === status ? 'btn-secondary' : 'btn-outline-secondary'}"
+                            onclick={() => selectedStatus = status}
+                        >
+                            <i class="bi {status === 'Open' ? 'bi-circle' : status === 'Closed' ? 'bi-x-circle' : 'bi-three-dots'} me-1"></i>
+                            {status}
+                        </button>
+                    {/each}
+                </div>
+            </div>
 
-                        <div class="col">
-                            <label for="title" class="form-label">Title</label>
-                            <input 
-                                type="text" 
-                                class="form-control" 
-                                id="title"
-                                bind:value={newPosition.title}
-                                required
-                            >
-                        </div>
-                        
-                        <div class="col">
-                            <label for="hiringManager" class="form-label">Hiring Manager</label>
-                            <input 
-                                type="text" 
-                                class="form-control" 
-                                id="hiringManager"
-                                bind:value={newPosition.hiringManager}
-                                required
-                            >
-                        </div>
-                        
-                        <div class="col-2">
-                            <label for="timeline" class="form-label">Timeline</label>
-                            <select 
-                                class="form-select" 
-                                id="timeline"
-                                bind:value={newPosition.timeline}
-                                required
-                            >
-                                {#each timelines as quarter}
-                                    <option value={quarter}>{quarter}</option>
-                                {/each}
-                            </select>
-                        </div>
+            <!-- Add Position Button -->
+            <button 
+                type="button" 
+                class="btn btn-primary" 
+                onclick={() => showForm = true}
+                disabled={showForm}
+            >
+                <i class="bi bi-plus"></i> Add Position
+            </button>
+        </div>
 
-                        <div class="col-auto d-flex align-items-end gap-2">
-                            <button type="button" class="btn btn-secondary w-100px" onclick={cancelForm}>
-                                Cancel
+        <!-- Second Line Filters -->
+        {#if showFilters}
+        <div class="d-flex gap-2 align-items-center" transition:slide>
+            <small class="text-muted">Filter by:</small>
+            <!-- Department Filter -->
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-building me-1"></i>
+                    {selectedDepartment === 'All' ? 'Department' : selectedDepartment}
+                </button>
+                <ul class="dropdown-menu">
+                    {#each departments as dept}
+                        <li>
+                            <button 
+                                class="dropdown-item {selectedDepartment === dept ? 'active' : ''}"
+                                onclick={() => selectedDepartment = dept}
+                            >
+                                {dept}
                             </button>
-                            <button type="submit" class="btn btn-success w-100px">
-                                Add
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            {/if}
+                        </li>
+                    {/each}
+                </ul>
+            </div>
 
-            <!-- Table -->
-            <div class="table-responsive">
-                <table class="table position-table">
-                    <tbody>
-                        {#each data.positions as position}
-                            <tr>
-                                <td class="align-middle status-col">
-                                    <button class="btn btn-sm {position.status.toLowerCase() === 'open' ? 'btn-success' : 'btn-danger'}" 
-                                            style="width: 80px;" 
-                                            disabled>
-                                        {position.status.toLowerCase() === 'open' ? 'Open' : 'Closed'}
-                                    </button>
-                                </td>
-                                <td class="align-middle dept-col">
-                                    <button class="btn btn-sm btn-outline-secondary department-btn" disabled>
-                                        {position.department}
-                                    </button>
-                                </td>
-                                <td class="align-middle title-col">
-                                    <div class="d-flex">
-                                        <div class="fw-bold title-text">{position.title}</div>
-                                        <div class="text-muted small ms-3 manager-text">{position.hiringManager}</div>
-                                    </div>
-                                </td>
-                                <td class="align-middle text-end stage-col">
-                                    <div class="d-flex gap-1 flex-nowrap justify-content-end">
-                                        {#each stages as stage}
-                                            {@const count = getStageCount(position, stage)}
-                                            <button 
-                                                class="btn btn-sm {getStageButtonStyle(count, stage, position)} stage-btn"
-                                                disabled
-                                            >
-                                                {stage === 'Hired' ? 'Hired' : `${stage}: ${count}`}
-                                            </button>
-                                        {/each}
-                                    </div>
-                                </td>
-                                <td class="align-middle action-col">
-                                    <div class="d-flex">
-                                        <button class="btn btn-sm btn-info me-2 text-white" disabled>
-                                            {position.timeline}
-                                        </button>
-                                        <button 
-                                            class="btn btn-sm btn-outline-danger hover-fill"
-                                            onclick={() => deletePosition(position)}
-                                            aria-label={`Delete position: ${position.title}`}
-                                        >
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
+            <!-- Timeline Filter -->
+            <div class="btn-group btn-group-sm">
+                <button type="button" class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-calendar me-1"></i>
+                    {selectedTimeline === 'All' ? 'Timeline' : selectedTimeline}
+                </button>
+                <ul class="dropdown-menu">
+                    {#each timelines as timeline}
+                        <li>
+                            <button 
+                                class="dropdown-item {selectedTimeline === timeline ? 'active' : ''}"
+                                onclick={() => selectedTimeline = timeline}
+                            >
+                                {timeline}
+                            </button>
+                        </li>
+                    {/each}
+                </ul>
             </div>
         </div>
+        {/if}
     </div>
+
+    <!-- Loading and Error States -->
+    {#if loading}
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    {:else if error}
+        <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            {error}
+        </div>
+    {:else}
+        <!-- Combined Card for Form and Table -->
+        <div class="card">
+            <div class="card-body">
+                <!-- Form -->
+                {#if showForm}
+                    <form id="positionForm" onsubmit={handleSubmit} class="mb-4">
+                        <div class="row g-3">
+                            <div class="col">
+                                <label for="department" class="form-label">Department</label>
+                                <select 
+                                    class="form-select" 
+                                    id="department"
+                                    bind:value={newPosition.department}
+                                    required
+                                >
+                                    {#each departments as dept}
+                                        <option value={dept}>{dept}</option>
+                                    {/each}
+                                </select>
+                            </div>
+
+                            <div class="col">
+                                <label for="title" class="form-label">Title</label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="title"
+                                    bind:value={newPosition.title}
+                                    required
+                                >
+                            </div>
+                            
+                            <div class="col">
+                                <label for="hiringManager" class="form-label">Hiring Manager</label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="hiringManager"
+                                    bind:value={newPosition.hiringManager}
+                                    required
+                                >
+                            </div>
+                            
+                            <div class="col-2">
+                                <label for="timeline" class="form-label">Timeline</label>
+                                <select 
+                                    class="form-select" 
+                                    id="timeline"
+                                    bind:value={newPosition.timeline}
+                                    required
+                                >
+                                    {#each timelines as quarter}
+                                        <option value={quarter}>{quarter}</option>
+                                    {/each}
+                                </select>
+                            </div>
+
+                            <div class="col-auto d-flex align-items-end gap-2">
+                                <button type="button" class="btn btn-secondary w-100px" onclick={cancelForm}>
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn btn-success w-100px">
+                                    Add
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                {/if}
+
+                <!-- Table -->
+                <div class="table-responsive">
+                    <!-- Results Count -->
+                    <div class="text-end mb-2">
+                        <small class="text-muted">
+                            Showing {filteredPositions.length} of {data.positions.length} positions
+                        </small>
+                    </div>
+
+                    {#if data.positions.length === 0}
+                        <div class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox-fill fs-1 mb-3 d-block"></i>
+                            No positions found
+                        </div>
+                    {:else}
+                        <table class="table position-table">
+                            <tbody>
+                                {#each filteredPositions as position}
+                                    <tr>
+                                        <td class="align-middle status-col">
+                                            <button class="btn btn-sm {position.status?.toLowerCase() === 'open' ? 'btn-success' : 'btn-danger'}" 
+                                                    style="width: 80px;" 
+                                                    disabled>
+                                                {position.status?.toLowerCase() === 'open' ? 'Open' : 'Closed'}
+                                            </button>
+                                        </td>
+                                        <td class="align-middle dept-col">
+                                            <button class="btn btn-sm btn-outline-secondary department-btn" disabled>
+                                                {position.department}
+                                            </button>
+                                        </td>
+                                        <td class="align-middle title-col">
+                                            <div class="d-flex">
+                                                <div class="fw-bold title-text">{position.title}</div>
+                                                <div class="text-muted small ms-3 manager-text">{position.hiringManager}</div>
+                                            </div>
+                                        </td>
+                                        <td class="align-middle text-end stage-col">
+                                            <div class="d-flex gap-1 flex-nowrap justify-content-end">
+                                                {#each stages as stage}
+                                                    {@const count = getStageCount(position, stage)}
+                                                    <button 
+                                                        class="btn btn-sm {getStageButtonStyle(count, stage, position)} stage-btn"
+                                                        disabled
+                                                    >
+                                                        {stage === 'Hired' ? 'Hired' : `${stage}: ${count}`}
+                                                    </button>
+                                                {/each}
+                                            </div>
+                                        </td>
+                                        <td class="align-middle action-col">
+                                            <div class="d-flex">
+                                                <button class="btn btn-sm btn-info me-2 text-white" disabled>
+                                                    {position.timeline}
+                                                </button>
+                                                <button 
+                                                    class="btn btn-sm btn-outline-danger hover-fill"
+                                                    onclick={() => deletePosition(position)}
+                                                    aria-label={`Delete position: ${position.title}`}
+                                                >
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    {/if}
+                </div>
+            </div>
+        </div>
+    {/if}
 </div>
 
 <style>
