@@ -7,7 +7,7 @@ if (building) {
 	console.log('Skipping DB connection during build');
 }
 
-const uri = env.MONGODB_URI || env.MONGODB_URI_PROD;
+const uri = env.MONGODB_URI_PROD || env.MONGODB_URI;
 if (!uri && !building) {
 	throw new Error('MongoDB connection string not found in environment variables');
 }

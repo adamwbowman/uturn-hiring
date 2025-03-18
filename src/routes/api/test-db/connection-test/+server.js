@@ -11,7 +11,7 @@ export async function GET() {
         });
     }
 
-    const uri = env.MONGODB_URI || env.MONGODB_URI_PROD;
+    const uri = env.MONGODB_URI_PROD || env.MONGODB_URI;
     if (!uri) {
         return json({
             status: 'error',
@@ -32,7 +32,7 @@ export async function GET() {
         
         return json({
             status: 'success',
-            message: 'Successfully connected to MongoDB!',
+            message: 'Successfully connected to MongoDB Atlas!',
             database: db.databaseName
         });
     } catch (error) {
