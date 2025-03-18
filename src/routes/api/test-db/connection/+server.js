@@ -1,27 +1,50 @@
 import { json } from '@sveltejs/kit';
 import { MongoClient } from 'mongodb';
-import { MONGODB_URI, MONGODB_DB } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+import { building } from '$app/environment';
 
 export async function GET() {
+    if (building) {
+        return json({
+            status: 'skipped',
+            message: 'Database connection test skipped during build'
+        });
+    }
+
+    const uri = env.MONGODB_URI || env.MONGODB_URI_PROD;
+    if (!uri) {
+        return json({
+            status: 'error',
+            message: 'MongoDB connection string not found in environment variables'
+        }, { status: 500 });
+    }
+
     let client = null;
+    
     try {
-        client = new MongoClient(MONGODB_URI);
+        // Create a new client and connect
+        client = new MongoClient(uri);
         await client.connect();
         
-        const db = client.db(MONGODB_DB);
-        const buildInfo = await db.command({ buildInfo: 1 });
-
+        // Try a simple command to verify the connection
+        const db = client.db();
+        await db.command({ ping: 1 });
+        
         return json({
-            status: 'connected',
-            database: MONGODB_DB,
-            version: buildInfo.version
+            status: 'success',
+            message: 'Successfully connected to MongoDB!',
+            database: db.databaseName
         });
     } catch (error) {
-        return json({ 
-            error: 'Failed to connect to database',
-            details: error.message 
+        console.error('MongoDB connection error:', error);
+        return json({
+            status: 'error',
+            error: `Failed to connect: ${error.message}`
         }, { status: 500 });
     } finally {
-        if (client) await client.close();
+        // Always close the connection
+        if (client) {
+            await client.close();
+        }
     }
 } 
