@@ -1,13 +1,27 @@
 import { MongoClient } from 'mongodb';
+import { env } from '$env/dynamic/private';
+import { building } from '$app/environment';
 
-const uri = 'mongodb://localhost:27017';
-const dbName = 'sveltekit_db';
+// Skip DB connection during build
+if (building) {
+	console.log('Skipping DB connection during build');
+}
+
+const uri = env.MONGODB_URI || env.MONGODB_URI_PROD;
+if (!uri && !building) {
+	throw new Error('MongoDB connection string not found in environment variables');
+}
 
 let client;
 let isConnecting = false;
 let connectionPromise = null;
 
 async function connect() {
+	if (building) {
+		console.log('Skipping DB connection during build');
+		return null;
+	}
+
 	if (isConnecting) {
 		return connectionPromise;
 	}
@@ -17,7 +31,7 @@ async function connect() {
 		try {
 			client = new MongoClient(uri);
 			await client.connect();
-			console.log('✅ Connected to MongoDB');
+			console.log('✅ Connected to MongoDB Atlas');
 			isConnecting = false;
 			resolve(client);
 		} catch (error) {
@@ -32,15 +46,25 @@ async function connect() {
 }
 
 export async function getCollection(collectionName) {
+	if (building) {
+		console.log('Skipping DB operation during build');
+		return null;
+	}
+
 	try {
 		if (!client) {
 			await connect();
 		}
 		
-		// Test the connection
-		await client.db(dbName).command({ ping: 1 });
+		if (!client) {
+			throw new Error('No MongoDB connection available');
+		}
 		
-		return client.db(dbName).collection(collectionName);
+		// Test the connection
+		const db = client.db();
+		await db.command({ ping: 1 });
+		
+		return db.collection(collectionName);
 	} catch (error) {
 		console.error('❌ MongoDB operation error:', error);
 		// Reset client on error to force a new connection attempt
