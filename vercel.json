@@ -3,7 +3,20 @@
 	"builds": [
 	  {
 		"src": "package.json",
-		"use": "@vercel/node"
+		"use": "@vercel/static-build",
+		"config": {
+		  "distDir": ".svelte-kit/vercel"
+		}
+	  }
+	],
+	"routes": [
+	  {
+		"src": "/api/(.*)",
+		"dest": "/api/$1"
+	  },
+	  {
+		"src": "/(.*)",
+		"dest": "/"
 	  }
 	]
   }
