@@ -1,34 +1,45 @@
-import { json } from '@sveltejs/kit';
 import { MongoClient } from 'mongodb';
+import { MONGODB_URI_DEV, MONGODB_URI_PROD } from '$env/static/private';
+import { json } from '@sveltejs/kit';
 
-const uri = 'mongodb://localhost:27017';
-const dbName = 'sveltekit_db';
-
-export async function GET() {
-  let client = null;
-  
-  try {
-    // Create a new client and connect
-    client = new MongoClient(uri);
-    await client.connect();
+async function testConnection(uri, environment) {
+    console.log(`Testing ${environment} connection...`);
     
-    // Try a simple command to verify the connection
-    await client.db(dbName).command({ ping: 1 });
+    const client = new MongoClient(uri);
     
-    return json({
-      status: 'success',
-      message: 'Successfully connected to MongoDB!'
-    });
-  } catch (error) {
-    console.error('MongoDB connection error:', error);
-    return json({
-      status: 'error',
-      error: `Failed to connect: ${error.message}`
-    }, { status: 500 });
-  } finally {
-    // Always close the connection
-    if (client) {
-      await client.close();
+    try {
+        await client.connect();
+        const db = client.db();
+        await db.command({ ping: 1 });
+        console.log(`Connected to database: ${db.databaseName}`);
+        
+        return {
+            status: 'success',
+            message: 'Successfully connected to MongoDB',
+            connection: {
+                database: db.databaseName,
+                environment
+            }
+        };
+    } catch (error) {
+        console.error(`${environment} connection error:`, error);
+        return {
+            status: 'error',
+            message: error.message,
+            environment,
+            details: error.code ? {
+                code: error.code,
+                codeName: error.codeName
+            } : undefined
+        };
+    } finally {
+        await client.close();
     }
-  }
+}
+
+export async function GET({ url }) {
+    const testEnv = url.searchParams.get('env') || 'prod';
+    const uri = testEnv === 'prod' ? MONGODB_URI_PROD : MONGODB_URI_DEV;
+    
+    return json(await testConnection(uri, testEnv));
 }
