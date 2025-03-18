@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { getCollection } from '$lib/data/dbConn.js';
+import { getCollection } from '$lib/data/mongodb.js';
 
 export async function POST({ request }) {
     try {
