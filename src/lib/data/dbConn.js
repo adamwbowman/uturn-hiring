@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { env } from '$env/dynamic/private';
+import { MONGODB_URI_PROD } from '$env/static/private';
 import { building } from '$app/environment';
 
 // Skip DB connection during build
@@ -7,8 +7,7 @@ if (building) {
 	console.log('Skipping DB connection during build');
 }
 
-const uri = env.MONGODB_URI_PROD || env.MONGODB_URI;
-if (!uri && !building) {
+if (!MONGODB_URI_PROD && !building) {
 	throw new Error('MongoDB connection string not found in environment variables');
 }
 
@@ -29,7 +28,7 @@ async function connect() {
 	isConnecting = true;
 	connectionPromise = new Promise(async (resolve, reject) => {
 		try {
-			client = new MongoClient(uri);
+			client = new MongoClient(MONGODB_URI_PROD);
 			await client.connect();
 			console.log('✅ Connected to MongoDB Atlas');
 			isConnecting = false;
